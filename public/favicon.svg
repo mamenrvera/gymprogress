@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161c28"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+    <linearGradient id="lime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2fb9a"/>
+      <stop offset="1" stop-color="#84cc16"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="28" y="28" width="456" height="456" rx="94" fill="none" stroke="#222938" stroke-width="2"/>
+  <g fill="url(#lime)">
+    <rect x="96" y="214" width="54" height="150" rx="22"/>
+    <rect x="362" y="214" width="54" height="150" rx="22"/>
+    <rect x="166" y="238" width="38" height="102" rx="16"/>
+    <rect x="308" y="238" width="38" height="102" rx="16"/>
+    <rect x="196" y="276" width="120" height="26" rx="13"/>
+  </g>
+  <path d="M190 154 L256 88 L322 154" fill="none" stroke="#bef264" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 96 L256 196" fill="none" stroke="#bef264" stroke-width="30" stroke-linecap="round"/>
+</svg>

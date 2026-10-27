@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle, Calculator, Info, Save } from 'lucide-react'
 import type { Food } from '../../types'
 import { FOOD_CATEGORIES } from '../../types'
-import { foodSchema, type FoodFormValues } from '../../lib/validators'
+import { foodSchema, type FoodFormValues, getFoodMacroWarnings, parseDecimal } from '../../lib/validators'
 import { kcalFromMacros, roundTo } from '../../lib/calculations'
 import { saveFood } from '../../lib/repositories'
 import { useApp } from '../../context/AppContext'
@@ -43,9 +43,11 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
   const protein = Number(values.proteinPer100) || 0
   const carbs = Number(values.carbsPer100) || 0
   const fat = Number(values.fatPer100) || 0
+  const fiber = Number(values.fiberPer100) || 0
   const estimated = kcalFromMacros(protein, carbs, fat)
   const difference = roundTo(declared - estimated, 1)
   const mismatch = declared > 0 && Math.abs(difference) > Math.max(25, declared * 0.2)
+  const macroWarnings = getFoodMacroWarnings({ proteinPer100: protein, carbsPer100: carbs, fatPer100: fat, fiberPer100: fiber })
 
   const onSubmit = handleSubmit(async (formValues) => {
     try {
@@ -108,13 +110,10 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             </label>
             <input
               id="food-kcal"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="any"
-              min="0"
-              max="900"
               className={cn('input tabular', errors.caloriesPer100 && 'input-error')}
-              {...register('caloriesPer100', { valueAsNumber: true })}
+              {...register('caloriesPer100', { setValueAs: parseDecimal })}
             />
             {errors.caloriesPer100 ? <p className="field-error">{errors.caloriesPer100.message}</p> : null}
           </div>
@@ -124,13 +123,10 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             </label>
             <input
               id="food-protein"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="any"
-              min="0"
-              max="100"
               className={cn('input tabular', errors.proteinPer100 && 'input-error')}
-              {...register('proteinPer100', { valueAsNumber: true })}
+              {...register('proteinPer100', { setValueAs: parseDecimal })}
             />
             {errors.proteinPer100 ? <p className="field-error">{errors.proteinPer100.message}</p> : null}
           </div>
@@ -140,13 +136,10 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             </label>
             <input
               id="food-carbs"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="any"
-              min="0"
-              max="100"
               className={cn('input tabular', errors.carbsPer100 && 'input-error')}
-              {...register('carbsPer100', { valueAsNumber: true })}
+              {...register('carbsPer100', { setValueAs: parseDecimal })}
             />
             {errors.carbsPer100 ? <p className="field-error">{errors.carbsPer100.message}</p> : null}
           </div>
@@ -156,13 +149,10 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             </label>
             <input
               id="food-fat"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="any"
-              min="0"
-              max="100"
               className={cn('input tabular', errors.fatPer100 && 'input-error')}
-              {...register('fatPer100', { valueAsNumber: true })}
+              {...register('fatPer100', { setValueAs: parseDecimal })}
             />
             {errors.fatPer100 ? <p className="field-error">{errors.fatPer100.message}</p> : null}
           </div>
@@ -172,13 +162,10 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             </label>
             <input
               id="food-fiber"
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="any"
-              min="0"
-              max="100"
               className={cn('input tabular', errors.fiberPer100 && 'input-error')}
-              {...register('fiberPer100', { valueAsNumber: true })}
+              {...register('fiberPer100', { setValueAs: parseDecimal })}
             />
             {errors.fiberPer100 ? <p className="field-error">{errors.fiberPer100.message}</p> : null}
           </div>
@@ -204,6 +191,17 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
             Hay una diferencia de {Math.abs(difference).toFixed(1)} kcal entre la etiqueta y los macros. Puede ser
             normal por la fibra, el alcohol o el redondeo del fabricante; revisa los datos si no cuadra.
           </p>
+        ) : null}
+
+        {macroWarnings.length > 0 ? (
+          <div className="mt-2 space-y-1.5">
+            {macroWarnings.map((warning, i) => (
+              <p key={i} className="flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-400">
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                {warning}
+              </p>
+            ))}
+          </div>
         ) : null}
       </div>
 

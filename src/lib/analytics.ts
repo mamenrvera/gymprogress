@@ -199,6 +199,40 @@ export function muscleGroupDistribution(
     .sort((a, b) => b.sets - a.sets)
 }
 
+export interface PersonalRecord {
+  type: 'maxWeight' | 'maxReps' | 'maxVolume' | 'bestE1rm'
+  label: string
+  value: number
+  unit: string
+  date: string
+  workoutId: string
+  weightKg?: number
+  reps?: number
+}
+
+export interface SessionComparison {
+  lastSession: {
+    date: string
+    workoutId: string
+    maxWeight: number
+    reps: number
+    sets: number
+    volume: number
+  } | null
+  previousSession: {
+    date: string
+    workoutId: string
+    maxWeight: number
+    reps: number
+    sets: number
+    volume: number
+  } | null
+  weightDiff: number | null
+  repsDiff: number | null
+  volumeDiff: number | null
+  setsDiff: number | null
+}
+
 export interface StrengthPoint {
   date: string
   label: string
@@ -253,6 +287,324 @@ export function strengthHistory(
   return Array.from(grouped.values())
     .sort((a, b) => a.points.date.localeCompare(b.points.date))
     .map((item) => item.points)
+}
+
+export function personalRecords(
+  workouts: Workout[],
+  workoutExercises: WorkoutExercise[],
+  sets: WorkoutSet[],
+  exerciseKey: string,
+): PersonalRecord[] {
+  const relevantExercises = workoutExercises.filter(
+    (exercise) => (exercise.exerciseId || exercise.exerciseName) === exerciseKey,
+  )
+  const byId = new Map(relevantExercises.map((exercise) => [exercise.id, exercise]))
+  const workoutMap = new Map(
+    workouts.filter((workout) => workout.status === 'completed').map((workout) => [workout.id, workout]),
+  )
+
+  let maxWeight = 0
+  let maxWeightDate = ''
+  let maxWeightWorkoutId = ''
+  let maxWeightReps = 0
+
+  let maxReps = 0
+  let maxRepsWeight = 0
+  let maxRepsDate = ''
+  let maxRepsWorkoutId = ''
+
+  let maxVolume = 0
+  let maxVolumeDate = ''
+  let maxVolumeWorkoutId = ''
+
+  let bestE1rm = 0
+  let bestE1rmWeight = 0
+  let bestE1rmReps = 0
+  let bestE1rmDate = ''
+  let bestE1rmWorkoutId = ''
+
+  // Group sets by workout for volume calculation
+  const setsByWorkout = new Map<string, WorkoutSet[]>()
+  for (const set of sets) {
+    if (!set.completed || set.isWarmup) continue
+    const exercise = byId.get(set.workoutExerciseId)
+    const workout = workoutMap.get(set.workoutId)
+    if (!exercise || !workout) continue
+    const list = setsByWorkout.get(set.workoutId) ?? []
+    list.push(set)
+    setsByWorkout.set(set.workoutId, list)
+  }
+
+  for (const set of sets) {
+    if (!set.completed || set.isWarmup) continue
+    const exercise = byId.get(set.workoutExerciseId)
+    const workout = workoutMap.get(set.workoutId)
+    if (!exercise || !workout) continue
+
+    // Max weight
+    if (set.weightKg > maxWeight) {
+      maxWeight = set.weightKg
+      maxWeightDate = workout.date
+      maxWeightWorkoutId = workout.id
+      maxWeightReps = set.reps
+    }
+
+    // Max reps
+    if (set.reps > maxReps) {
+      maxReps = set.reps
+      maxRepsWeight = set.weightKg
+      maxRepsDate = workout.date
+      maxRepsWorkoutId = workout.id
+    }
+
+    // Best 1RM
+    const e1rm = epley1RM(set.weightKg, set.reps)
+    if (e1rm > bestE1rm) {
+      bestE1rm = e1rm
+      bestE1rmWeight = set.weightKg
+      bestE1rmReps = set.reps
+      bestE1rmDate = workout.date
+      bestE1rmWorkoutId = workout.id
+    }
+  }
+
+  // Max volume per session
+  for (const [workoutId, workoutSets] of setsByWorkout) {
+    const workout = workoutMap.get(workoutId)
+    if (!workout) continue
+    const volume = roundTo(workoutSets.reduce((sum, s) => sum + s.weightKg * s.reps, 0), 1)
+    if (volume > maxVolume) {
+      maxVolume = volume
+      maxVolumeDate = workout.date
+      maxVolumeWorkoutId = workout.id
+    }
+  }
+
+  const records: PersonalRecord[] = []
+
+  if (maxWeight > 0) {
+    records.push({
+      type: 'maxWeight',
+      label: 'Mayor peso',
+      value: maxWeight,
+      unit: 'kg',
+      date: maxWeightDate,
+      workoutId: maxWeightWorkoutId,
+      weightKg: maxWeight,
+      reps: maxWeightReps,
+    })
+  }
+
+  if (maxReps > 0) {
+    records.push({
+      type: 'maxReps',
+      label: 'Más repeticiones',
+      value: maxReps,
+      unit: 'reps',
+      date: maxRepsDate,
+      workoutId: maxRepsWorkoutId,
+      weightKg: maxRepsWeight,
+      reps: maxReps,
+    })
+  }
+
+  if (maxVolume > 0) {
+    records.push({
+      type: 'maxVolume',
+      label: 'Mayor volumen',
+      value: maxVolume,
+      unit: 'kg×reps',
+      date: maxVolumeDate,
+      workoutId: maxVolumeWorkoutId,
+    })
+  }
+
+  if (bestE1rm > 0) {
+    records.push({
+      type: 'bestE1rm',
+      label: 'Mejor 1RM est.',
+      value: bestE1rm,
+      unit: 'kg',
+      date: bestE1rmDate,
+      workoutId: bestE1rmWorkoutId,
+      weightKg: bestE1rmWeight,
+      reps: bestE1rmReps,
+    })
+  }
+
+  return records
+}
+
+export function sessionComparison(
+  workouts: Workout[],
+  workoutExercises: WorkoutExercise[],
+  sets: WorkoutSet[],
+  exerciseKey: string,
+): SessionComparison {
+  const relevantExercises = workoutExercises.filter(
+    (exercise) => (exercise.exerciseId || exercise.exerciseName) === exerciseKey,
+  )
+  const byId = new Map(relevantExercises.map((exercise) => [exercise.id, exercise]))
+  const workoutMap = new Map(
+    workouts.filter((workout) => workout.status === 'completed').map((workout) => [workout.id, workout]),
+  )
+
+  // Group sets by workout
+  const byWorkout = new Map<string, WorkoutSet[]>()
+  for (const set of sets) {
+    if (!set.completed || set.isWarmup) continue
+    const exercise = byId.get(set.workoutExerciseId)
+    const workout = workoutMap.get(set.workoutId)
+    if (!exercise || !workout) continue
+    const list = byWorkout.get(set.workoutId) ?? []
+    list.push(set)
+    byWorkout.set(set.workoutId, list)
+  }
+
+  // Sort workouts by date descending
+  const sortedWorkouts = Array.from(byWorkout.keys())
+    .map((id) => workoutMap.get(id)!)
+    .sort((a, b) => b.date.localeCompare(a.date))
+
+  if (sortedWorkouts.length === 0) {
+    return { lastSession: null, previousSession: null, weightDiff: null, repsDiff: null, volumeDiff: null, setsDiff: null }
+  }
+
+  const lastWorkout = sortedWorkouts[0]
+  const lastSets = byWorkout.get(lastWorkout.id) ?? []
+  const lastMaxWeight = Math.max(...lastSets.map((s) => s.weightKg), 0)
+  const lastReps = lastSets.reduce((sum, s) => sum + (s.reps || 0), 0)
+  const lastVolume = roundTo(lastSets.reduce((sum, s) => sum + s.weightKg * s.reps, 0), 1)
+
+  const lastSession = {
+    date: lastWorkout.date,
+    workoutId: lastWorkout.id,
+    maxWeight: lastMaxWeight,
+    reps: lastReps,
+    sets: lastSets.length,
+    volume: lastVolume,
+  }
+
+  if (sortedWorkouts.length < 2) {
+    return { lastSession, previousSession: null, weightDiff: null, repsDiff: null, volumeDiff: null, setsDiff: null }
+  }
+
+  const prevWorkout = sortedWorkouts[1]
+  const prevSets = byWorkout.get(prevWorkout.id) ?? []
+  const prevMaxWeight = Math.max(...prevSets.map((s) => s.weightKg), 0)
+  const prevReps = prevSets.reduce((sum, s) => sum + (s.reps || 0), 0)
+  const prevVolume = roundTo(prevSets.reduce((sum, s) => sum + s.weightKg * s.reps, 0), 1)
+
+  const previousSession = {
+    date: prevWorkout.date,
+    workoutId: prevWorkout.id,
+    maxWeight: prevMaxWeight,
+    reps: prevReps,
+    sets: prevSets.length,
+    volume: prevVolume,
+  }
+
+  return {
+    lastSession,
+    previousSession,
+    weightDiff: roundTo(lastMaxWeight - prevMaxWeight, 1),
+    repsDiff: lastReps - prevReps,
+    volumeDiff: roundTo(lastVolume - prevVolume, 1),
+    setsDiff: lastSets.length - prevSets.length,
+  }
+}
+
+export function weeklyStrengthSummary(
+  workouts: Workout[],
+  workoutExercises: WorkoutExercise[],
+  sets: WorkoutSet[],
+  weekStart: string,
+  weekEnd: string,
+): { exercises: Array<{ name: string; key: string; sessions: number; maxWeight: number; volume: number; change: number | null }>; newPRs: number } {
+  const completedWorkouts = workouts.filter(
+    (w) => w.status === 'completed' && w.date >= weekStart && w.date <= weekEnd,
+  )
+  const completedIds = new Set(completedWorkouts.map((w) => w.id))
+
+  // Previous week for comparison
+  const prevWeekStart = addDaysISO(weekStart, -7)
+  const prevWeekEnd = addDaysISO(weekEnd, -7)
+  const prevCompletedWorkouts = workouts.filter(
+    (w) => w.status === 'completed' && w.date >= prevWeekStart && w.date <= prevWeekEnd,
+  )
+  const prevCompletedIds = new Set(prevCompletedWorkouts.map((w) => w.id))
+
+  const exerciseMap = new Map<string, { name: string; key: string; sessions: number; maxWeight: number; volume: number; prevMaxWeight: number }>()
+
+  for (const set of sets) {
+    if (!set.completed || set.isWarmup) continue
+    if (!completedIds.has(set.workoutId)) continue
+    const we = workoutExercises.find((w) => w.id === set.workoutExerciseId)
+    if (!we) continue
+    const key = we.exerciseId || we.exerciseName
+    const existing = exerciseMap.get(key)
+    if (existing) {
+      existing.maxWeight = Math.max(existing.maxWeight, set.weightKg)
+      existing.volume = roundTo(existing.volume + set.weightKg * set.reps, 1)
+      existing.sessions = existing.sessions // already counted
+    } else {
+      exerciseMap.set(key, {
+        name: we.exerciseName,
+        key,
+        sessions: 1,
+        maxWeight: set.weightKg,
+        volume: roundTo(set.weightKg * set.reps, 1),
+        prevMaxWeight: 0,
+      })
+    }
+  }
+
+  // Count sessions per exercise
+  for (const we of workoutExercises) {
+    if (!completedIds.has(we.workoutId)) continue
+    const key = we.exerciseId || we.exerciseName
+    const existing = exerciseMap.get(key)
+    if (existing) existing.sessions = (existing.sessions || 0) + 0 // placeholder, will fix below
+  }
+
+  // Actually count unique workouts per exercise
+  const sessionsPerExercise = new Map<string, Set<string>>()
+  for (const we of workoutExercises) {
+    if (!completedIds.has(we.workoutId)) continue
+    const key = we.exerciseId || we.exerciseName
+    const set = sessionsPerExercise.get(key) ?? new Set()
+    set.add(we.workoutId)
+    sessionsPerExercise.set(key, set)
+  }
+
+  // Previous week max weights
+  const prevMaxByExercise = new Map<string, number>()
+  for (const set of sets) {
+    if (!set.completed || set.isWarmup) continue
+    if (!prevCompletedIds.has(set.workoutId)) continue
+    const we = workoutExercises.find((w) => w.id === set.workoutExerciseId)
+    if (!we) continue
+    const key = we.exerciseId || we.exerciseName
+    const current = prevMaxByExercise.get(key) ?? 0
+    prevMaxByExercise.set(key, Math.max(current, set.weightKg))
+  }
+
+  const exercises = Array.from(exerciseMap.entries()).map(([key, data]) => ({
+    name: data.name,
+    key,
+    sessions: sessionsPerExercise.get(key)?.size ?? 0,
+    maxWeight: data.maxWeight,
+    volume: data.volume,
+    change: prevMaxByExercise.has(key) ? roundTo(data.maxWeight - (prevMaxByExercise.get(key) ?? 0), 1) : null,
+  }))
+
+  // Count new PRs this week (exercises where max weight > previous week)
+  let newPRs = 0
+  for (const ex of exercises) {
+    if (ex.change !== null && ex.change > 0) newPRs++
+  }
+
+  return { exercises, newPRs }
 }
 
 export interface ExerciseHistoryOption {

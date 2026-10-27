@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
-import { AppProvider } from './context/AppContext'
+
 import { Layout, ScrollToTop } from './components/Layout'
 import { ToastViewport } from './components/ToastViewport'
 import { HomePage } from './pages/HomePage'
@@ -9,6 +9,11 @@ import { TrainingPage } from './pages/TrainingPage'
 import { WorkoutEditorPage } from './pages/WorkoutEditorPage'
 import { ProgressPage } from './pages/ProgressPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { LoginPage } from './pages/auth/LoginPage'
+import { RegisterPage } from './pages/auth/RegisterPage'
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
+import { ProtectedRoute, PublicOnlyRoute } from './components/auth/ProtectedRoute'
 import { Button } from './components/ui/Button'
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -62,9 +67,18 @@ export default function App() {
   return (
     <AppErrorBoundary>
       <BrowserRouter>
-        <AppProvider>
-          <ScrollToTop />
-          <Routes>
+        <ScrollToTop />
+        <Routes>
+          {/* Rutas públicas (login, registro, recuperación) */}
+          <Route element={<PublicOnlyRoute />}>
+            <Route path="login" element={<LoginPage />} />
+            <Route path="registro" element={<RegisterPage />} />
+            <Route path="recuperar" element={<ForgotPasswordPage />} />
+            <Route path="reset-password" element={<ResetPasswordPage />} />
+          </Route>
+
+          {/* Rutas privadas (requieren autenticación) */}
+          <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="alimentacion" element={<NutritionPage />} />
@@ -74,10 +88,31 @@ export default function App() {
               <Route path="ajustes" element={<SettingsPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
-          </Routes>
-          <ToastViewport />
-        </AppProvider>
+          </Route>
+
+          {/* Callback de autenticación (Supabase redirect) */}
+          <Route path="auth/callback" element={<AuthCallback />} />
+        </Routes>
+        <ToastViewport />
       </BrowserRouter>
     </AppErrorBoundary>
+  )
+}
+
+// Página de callback para confirmación de email / recuperación de contraseña
+function AuthCallback() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center px-4">
+      <div className="card max-w-md p-8 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-lime-400/10">
+          <svg className="h-7 w-7 text-accent animate-spin" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" fill="none" strokeLinecap="round" />
+          </svg>
+        </div>
+        <h2 className="font-display text-xl font-semibold text-fg">Procesando…</h2>
+        <p className="mt-2 text-sm text-muted">Completando la autenticación, por favor espera.</p>
+      </div>
+    </div>
   )
 }

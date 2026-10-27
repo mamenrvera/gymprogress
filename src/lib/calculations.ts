@@ -163,3 +163,50 @@ export function bmi(weightKg: number, heightCm: number): number {
   if (!weightKg || !heightCm) return 0
   return roundTo(weightKg / (heightCm / 100) ** 2, 1)
 }
+
+export interface BmiCategory {
+  label: string
+  color: string
+  bgColor: string
+  range: string
+  description: string
+}
+
+export function bmiCategory(bmiValue: number): BmiCategory {
+  if (bmiValue <= 0) return { label: 'Sin datos', color: 'text-faint', bgColor: 'bg-line', range: '—', description: 'Registra tu peso para calcular el IMC.' }
+  if (bmiValue < 18.5) return { label: 'Bajo peso', color: 'text-sky-400', bgColor: 'bg-sky-400', range: '< 18,5', description: 'Tu IMC está por debajo del rango saludable. Consulta con un profesional.' }
+  if (bmiValue < 25) return { label: 'Peso normal', color: 'text-accent', bgColor: 'bg-lime-400', range: '18,5 – 24,9', description: 'Tu IMC está en el rango saludable. ¡Sigue así!' }
+  if (bmiValue < 30) return { label: 'Sobrepeso', color: 'text-amber-400', bgColor: 'bg-amber-400', range: '25 – 29,9', description: 'Tu IMC indica sobrepeso. Considera ajustar tu nutrición y actividad.' }
+  if (bmiValue < 35) return { label: 'Obesidad grado I', color: 'text-orange-400', bgColor: 'bg-orange-400', range: '30 – 34,9', description: 'Tu IMC indica obesidad de grado I. Consulta con un profesional.' }
+  if (bmiValue < 40) return { label: 'Obesidad grado II', color: 'text-rose-400', bgColor: 'bg-rose-400', range: '35 – 39,9', description: 'Tu IMC indica obesidad de grado II. Consulta con un profesional.' }
+  return { label: 'Obesidad grado III', color: 'text-rose-500', bgColor: 'bg-rose-500', range: '≥ 40', description: 'Tu IMC indica obesidad de grado III. Consulta con un profesional.' }
+}
+
+// Barra de IMC: rango visible de 15 a 45 (30 unidades)
+// Posición del marcador: ((bmi - 15) / 30) * 100, clamped a [0, 100]
+export const BMI_BAR_MIN = 15
+export const BMI_BAR_MAX = 45
+
+// Colores para la evolución del peso corporal
+export const WEIGHT_COLOR_DOWN = '#bef264'   // verde (bajada)
+export const WEIGHT_COLOR_UP = '#fb7185'     // rojo (subida)
+export const WEIGHT_COLOR_SAME = '#94a3b8'   // gris (igual)
+export const WEIGHT_COLOR_FIRST = '#94a3b8'  // gris (primer registro)
+
+/**
+ * Devuelve el color de un punto de peso corporal según la variación respecto al anterior.
+ * @param currentWeight Peso del registro actual
+ * @param previousWeight Peso del registro anterior (undefined si es el primero)
+ */
+export function weightPointColor(currentWeight: number, previousWeight: number | undefined): string {
+  if (previousWeight === undefined) return WEIGHT_COLOR_FIRST
+  if (currentWeight < previousWeight) return WEIGHT_COLOR_DOWN
+  if (currentWeight > previousWeight) return WEIGHT_COLOR_UP
+  return WEIGHT_COLOR_SAME
+}
+
+export function bmiBarPosition(bmiValue: number): number {
+  if (bmiValue <= 0) return 0
+  const clamped = Math.max(BMI_BAR_MIN, Math.min(BMI_BAR_MAX, bmiValue))
+  return ((clamped - BMI_BAR_MIN) / (BMI_BAR_MAX - BMI_BAR_MIN)) * 100
+}

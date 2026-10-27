@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Check, Dumbbell, Plus, Search } from 'lucide-react'
 import type { Exercise, MuscleGroup } from '../../types'
 import { MUSCLE_GROUPS, MUSCLE_LABELS } from '../../types'
-import { db } from '../../lib/db'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { cn } from '../../lib/cn'
+import { useExercises } from '../../hooks/useSupabaseData'
 
 interface ExercisePickerModalProps {
   open: boolean
@@ -24,7 +23,8 @@ function normalize(text: string): string {
 }
 
 export function ExercisePickerModal({ open, onClose, onAdd, onRequestCreate }: ExercisePickerModalProps) {
-  const exercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []) ?? []
+  const { data: exercisesData } = useExercises()
+  const exercises = exercisesData ?? []
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<MuscleGroup | ''>('')
   const [addedIds, setAddedIds] = useState<string[]>([])

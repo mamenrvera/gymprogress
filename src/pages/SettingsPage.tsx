@@ -657,13 +657,13 @@ export function SettingsPage() {
             </div>
             <p className="mt-3 flex items-start gap-1.5 text-[10px] leading-relaxed text-faint">
               <Info className="mt-0.5 h-3 w-3 shrink-0" />
-              Los datos viven en IndexedDB, en tu navegador. Si borras los datos del navegador, se perderán: exporta una
-              copia de vez en cuando.
+              Los datos se guardan en Supabase (nube) y se sincronizan con este dispositivo. Si cierras sesión, los datos
+              permanecen en la nube. Exporta una copia de vez en cuando por seguridad.
             </p>
           </section>
 
           <p className="px-1 text-[10px] leading-relaxed text-faint">
-            GymProgress · versión 1.0 · React + Dexie · Sin cuentas ni servicios externos.
+            GymProgress · versión 1.0 · React + Supabase · Datos sincronizados en la nube.
           </p>
         </aside>
       </div>

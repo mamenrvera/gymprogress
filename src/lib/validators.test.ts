@@ -5,6 +5,8 @@ import {
   entrySchema,
   exerciseSchema,
   foodSchema,
+  getFoodMacroWarnings,
+  parseDecimal,
   setSchema,
   settingsSchema,
   workoutSchema,
@@ -51,17 +53,64 @@ describe('foodSchema', () => {
     expect(foodSchema.safeParse({ ...validFood, proteinPer100: -1 }).success).toBe(false)
   })
 
-  it('rechaza más de 100 g de macros por 100 g', () => {
+  it('acepta macros que superan los 100 g (validación no bloqueante)', () => {
     const result = foodSchema.safeParse({
       ...validFood,
       proteinPer100: 60,
       carbsPer100: 30,
       fatPer100: 30,
     })
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error.issues[0].path).toEqual(['proteinPer100'])
+    // Ya no se rechaza; se muestra advertencia en el formulario
+    expect(result.success).toBe(true)
+  })
+
+  it('acepta macros con decimales exactos de la etiqueta', () => {
+    const result = foodSchema.safeParse({
+      ...validFood,
+      proteinPer100: 8.4,
+      carbsPer100: 62.3,
+      fatPer100: 18.7,
+      fiberPer100: 5.2,
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.proteinPer100).toBe(8.4)
+      expect(result.data.carbsPer100).toBe(62.3)
+      expect(result.data.fatPer100).toBe(18.7)
+      expect(result.data.fiberPer100).toBe(5.2)
     }
+  })
+
+  it('getFoodMacroWarnings devuelve advertencia cuando macros superan 100 g', () => {
+    const warnings = getFoodMacroWarnings({
+      proteinPer100: 60,
+      carbsPer100: 30,
+      fatPer100: 30,
+      fiberPer100: 10,
+    })
+    expect(warnings.length).toBeGreaterThan(0)
+    expect(warnings[0]).toContain('supera los 100 g')
+  })
+
+  it('getFoodMacroWarnings no devuelve advertencia cuando macros son coherentes', () => {
+    const warnings = getFoodMacroWarnings({
+      proteinPer100: 13,
+      carbsPer100: 60,
+      fatPer100: 7,
+      fiberPer100: 10,
+    })
+    expect(warnings.length).toBe(0)
+  })
+
+  it('getFoodMacroWarnings avisa si la fibra supera los carbohidratos', () => {
+    const warnings = getFoodMacroWarnings({
+      proteinPer100: 20,
+      carbsPer100: 10,
+      fatPer100: 5,
+      fiberPer100: 15,
+    })
+    expect(warnings.length).toBeGreaterThan(0)
+    expect(warnings.some(w => w.includes('fibra'))).toBe(true)
   })
 
   it('convierte textos opcionales vacíos en undefined', () => {
@@ -75,6 +124,50 @@ describe('foodSchema', () => {
 
   it('rechaza kcal por 100 g fuera de rango', () => {
     expect(foodSchema.safeParse({ ...validFood, caloriesPer100: 901 }).success).toBe(false)
+  })
+})
+
+describe('parseDecimal', () => {
+  it('convierte coma decimal a punto', () => {
+    expect(parseDecimal('8,4')).toBe(8.4)
+    expect(parseDecimal('62,35')).toBe(62.35)
+    expect(parseDecimal('0,5')).toBe(0.5)
+  })
+
+  it('mantiene punto decimal', () => {
+    expect(parseDecimal('18.7')).toBe(18.7)
+    expect(parseDecimal('0.5')).toBe(0.5)
+  })
+
+  it('acepta cero', () => {
+    expect(parseDecimal('0')).toBe(0)
+    expect(parseDecimal('0,0')).toBe(0)
+  })
+
+  it('rechaza campo vacío (NaN, no cero)', () => {
+    expect(Number.isNaN(parseDecimal(''))).toBe(true)
+    expect(Number.isNaN(parseDecimal('   '))).toBe(true)
+  })
+
+  it('rechaza formato inválido', () => {
+    expect(Number.isNaN(parseDecimal('8,4,5'))).toBe(true)
+    expect(Number.isNaN(parseDecimal('abc'))).toBe(true)
+    expect(Number.isNaN(parseDecimal('1.2.3'))).toBe(true)
+  })
+
+  it('no multiplica por 10 ni por 100', () => {
+    expect(parseDecimal('8,4')).toBe(8.4)
+    expect(parseDecimal('8.4')).toBe(8.4)
+    expect(parseDecimal('0,05')).toBe(0.05)
+  })
+
+  it('acepta números negativos', () => {
+    expect(parseDecimal('-1.5')).toBe(-1.5)
+  })
+
+  it('pasa números directamente', () => {
+    expect(parseDecimal(8.4)).toBe(8.4)
+    expect(parseDecimal(0)).toBe(0)
   })
 })
 

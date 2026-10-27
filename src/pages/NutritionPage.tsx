@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import {
   BookOpen,
   Calculator,
@@ -13,10 +12,6 @@ import {
 } from 'lucide-react'
 import type { Food, MealType } from '../types'
 import { FOOD_CATEGORIES, MEAL_TYPES } from '../types'
-import { db } from '../lib/db'
-import { sumEntries } from '../lib/calculations'
-import { formatGrams, formatKcal } from '../lib/format'
-import { deleteFood } from '../lib/repositories'
 import { useApp } from '../context/AppContext'
 import { PageHeader } from '../components/ui/PageHeader'
 import { DateNavigator } from '../components/ui/DateNavigator'
@@ -29,6 +24,10 @@ import { AddFoodModal } from '../components/nutrition/AddFoodModal'
 import { FoodFormModal } from '../components/nutrition/FoodFormModal'
 import { EditFoodEntryModal } from '../components/nutrition/EditFoodEntryModal'
 import { cn } from '../lib/cn'
+import { sumEntries } from '../lib/calculations'
+import { formatGrams, formatKcal } from '../lib/format'
+import { deleteFood } from '../lib/repositories'
+import { useFoods, useEntries } from '../hooks/useSupabaseData'
 
 function normalize(text: string): string {
   return text
@@ -42,8 +41,11 @@ export function NutritionPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'alimentos' ? 'alimentos' : 'diario'
 
-  const entries = useLiveQuery(() => db.entries.where('date').equals(selectedDate).toArray(), [selectedDate]) ?? []
-  const foods = useLiveQuery(() => db.foods.orderBy('name').toArray(), []) ?? []
+  const { data: entriesData, refetch: refetchEntries } = useEntries()
+  const { data: foodsData, refetch: refetchFoods } = useFoods()
+
+  const entries = entriesData ?? []
+  const foods = foodsData ?? []
 
   const [addOpen, setAddOpen] = useState(false)
   const [addMeal, setAddMeal] = useState<MealType>('almuerzo')
@@ -68,7 +70,7 @@ export function NutritionPage() {
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 
-  const totals = useMemo(() => sumEntries(entries), [entries])
+  const totals = useMemo(() => sumEntries(entries.filter(e => e.date === selectedDate)), [entries, selectedDate])
   const editingEntry = entries.find((entry) => entry.id === editingEntryId)
 
   const filteredFoods = useMemo(() => {
@@ -99,6 +101,7 @@ export function NutritionPage() {
       await deleteFood(deletingFood.id)
       notify('Alimento eliminado de la biblioteca. Los registros anteriores se conservan.')
       setDeletingFood(undefined)
+      void refetchFoods()
     } catch {
       notify('No se pudo eliminar el alimento', 'error')
     }
@@ -167,7 +170,7 @@ export function NutritionPage() {
           </button>
         </div>
         <p className="hidden text-[11px] text-faint sm:block">
-          {entries.length} {entries.length === 1 ? 'registro' : 'registros'} · {formatKcal(totals.calories)} kcal
+          {entries.filter(e => e.date === selectedDate).length} {entries.filter(e => e.date === selectedDate).length === 1 ? 'registro' : 'registros'} · {formatKcal(totals.calories)} kcal
         </p>
       </div>
 
@@ -197,7 +200,7 @@ export function NutritionPage() {
               <MealSection
                 key={meal.value}
                 meal={meal.value}
-                entries={entries.filter((entry) => entry.meal === meal.value)}
+                entries={entries.filter((entry) => entry.date === selectedDate && entry.meal === meal.value)}
                 onAdd={() => openAddForMeal(meal.value)}
                 onEdit={(entry) => setEditingEntryId(entry.id)}
               />
@@ -250,7 +253,7 @@ export function NutritionPage() {
                       setFoodFormOpen(true)
                     }}
                   >
-                    <Plus className="h-4 w-4" /> Crear primer alimento
+                    <Plus className="h-4 w-4" /> Crear alimento
                   </Button>
                 }
               />
@@ -260,81 +263,68 @@ export function NutritionPage() {
               <EmptyState
                 icon={<Search className="h-5 w-5" />}
                 title="Sin resultados"
-                description="Prueba con otro nombre o cambia el filtro de categoría."
+                description="Prueba con otro nombre o cambia el grupo muscular."
               />
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredFoods.map((food) => {
-                const macroKcal = Math.round((food.per100.protein * 4 + food.per100.carbs * 4 + food.per100.fat * 9) * 10) / 10
-                return (
-                  <article key={food.id} className="card flex flex-col p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-sm font-semibold text-fg">{food.name}</h3>
-                        <p className="mt-0.5 truncate text-[10px] text-faint">
-                          {[food.brand, food.category].filter(Boolean).join(' · ') || 'Sin marca ni categoría'}
-                        </p>
-                      </div>
-                      <span className="chip shrink-0 border-lime-500/25 text-accent">
-                        {formatKcal(food.per100.calories)} kcal
-                      </span>
+              {filteredFoods.map((food) => (
+                <article key={food.id} className="card flex flex-col p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lime-400/10 text-accent">
+                      <Calculator className="h-4 w-4" />
                     </div>
-
-                    <div className="mt-3 grid grid-cols-3 gap-1.5 rounded-lg border border-line bg-raised/60 px-2 py-2 text-center">
-                      <div>
-                        <p className="text-[9px] uppercase text-faint">Prot.</p>
-                        <p className="text-xs font-semibold tabular text-protein">{formatGrams(food.per100.protein)} g</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] uppercase text-faint">Carb.</p>
-                        <p className="text-xs font-semibold tabular text-carbs">{formatGrams(food.per100.carbs)} g</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] uppercase text-faint">Grasa</p>
-                        <p className="text-xs font-semibold tabular text-fat">{formatGrams(food.per100.fat)} g</p>
-                      </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-semibold text-fg">{food.name}</h3>
+                      {food.brand ? <p className="mt-0.5 text-[10px] text-faint">{food.brand}</p> : null}
+                      {food.category ? (
+                        <span className="mt-1 inline-flex rounded-full bg-line/60 px-2 py-0.5 text-[9px] text-muted">
+                          {food.category}
+                        </span>
+                      ) : null}
                     </div>
-
-                    <p className="mt-2 flex items-center gap-1 text-[10px] text-faint">
-                      <Calculator className="h-3 w-3" /> Por 100 g · macros: {formatKcal(macroKcal)} kcal
-                    </p>
-
-                    <div className="mt-3 flex items-center gap-1.5 border-t border-line pt-3">
-                      <Button
-                        size="sm"
-                        className="flex-1 px-2"
-                        onClick={() => {
-                          setInitialFoodId(food.id)
-                          setAddMeal('almuerzo')
-                          setAddOpen(true)
-                        }}
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Añadir
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingFood(food)
-                          setFoodFormOpen(true)
-                        }}
-                        className="btn-icon h-8 w-8"
-                        aria-label={`Editar ${food.name}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeletingFood(food)}
-                        className="btn-icon h-8 w-8 hover:text-rose-400"
-                        aria-label={`Eliminar ${food.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-1.5 border-t border-line pt-3 text-center">
+                    <div>
+                      <p className="text-[9px] uppercase text-faint">Kcal</p>
+                      <p className="mt-0.5 text-xs font-semibold tabular text-fg">{formatKcal(food.per100.calories)}</p>
                     </div>
-                  </article>
-                )
-              })}
+                    <div>
+                      <p className="text-[9px] uppercase text-faint">Prot.</p>
+                      <p className="mt-0.5 text-xs font-semibold tabular text-protein">{formatGrams(food.per100.protein)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] uppercase text-faint">Carb.</p>
+                      <p className="mt-0.5 text-xs font-semibold tabular text-carbs">{formatGrams(food.per100.carbs)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] uppercase text-faint">Grasa</p>
+                      <p className="mt-0.5 text-xs font-semibold tabular text-fat">{formatGrams(food.per100.fat)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingFood(food)
+                        setFoodFormOpen(true)
+                      }}
+                      className="btn-icon h-8 w-8"
+                      aria-label={`Editar ${food.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingFood(food)}
+                      className="btn-icon h-8 w-8 hover:text-rose-400"
+                      aria-label={`Eliminar ${food.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </article>
+              ))}
             </div>
           )}
         </div>
@@ -342,13 +332,11 @@ export function NutritionPage() {
 
       <AddFoodModal
         open={addOpen}
-        onClose={() => {
-          setAddOpen(false)
-          setInitialFoodId(undefined)
-        }}
+        onClose={() => setAddOpen(false)}
         date={selectedDate}
         defaultMeal={addMeal}
         initialFoodId={initialFoodId}
+        onAdded={() => void refetchEntries()}
       />
       <FoodFormModal
         open={foodFormOpen}
@@ -357,16 +345,20 @@ export function NutritionPage() {
           setFoodFormOpen(false)
           setEditingFood(undefined)
         }}
+        onSaved={() => void refetchFoods()}
       />
       <EditFoodEntryModal
-        open={Boolean(editingEntry)}
         entry={editingEntry}
-        onClose={() => setEditingEntryId(null)}
+        open={Boolean(editingEntry)}
+        onClose={() => {
+          setEditingEntryId(null)
+          void refetchEntries()
+        }}
       />
       <ConfirmDialog
         open={Boolean(deletingFood)}
         title="Eliminar alimento"
-        message={`¿Quieres eliminar «${deletingFood?.name ?? ''}» de tu biblioteca? Los registros de comidas que ya has hecho se conservan.`}
+        message={`¿Quieres eliminar «${deletingFood?.name ?? ''}» de la biblioteca? Las comidas registradas conservan sus valores.`}
         confirmLabel="Eliminar"
         danger
         onConfirm={handleDeleteFood}

@@ -1,0 +1,23 @@
+# Supabase CLI config (opcional, para desarrollo local con `supabase start`)
+# No requerido para producción en Vercel
+
+project_id = "your-project-ref"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+port = 54323
+jwt_expiry = 3600
+enable_signup = true
+email_confirm = true
+
+[storage]
+port = 54324
+
+[functions]
+port = 54325

@@ -1,9 +1,7 @@
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Info, Scale } from 'lucide-react'
-import { db } from '../../lib/db'
 import { bodyWeightSchema, type BodyWeightFormValues } from '../../lib/validators'
 import { upsertBodyWeight } from '../../lib/repositories'
 import { useApp } from '../../context/AppContext'
@@ -12,6 +10,7 @@ import { formatMediumEs, todayISO } from '../../lib/dates'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { cn } from '../../lib/cn'
+import { useBodyWeights } from '../../hooks/useSupabaseData'
 
 interface WeightModalProps {
   open: boolean
@@ -22,7 +21,8 @@ interface WeightModalProps {
 
 export function WeightModal({ open, onClose, defaultDate, onSaved }: WeightModalProps) {
   const { notify, settings } = useApp()
-  const latest = useLiveQuery(() => db.bodyWeights.orderBy('date').last(), [])
+  const { data: bodyWeightsData } = useBodyWeights()
+  const latest = bodyWeightsData && bodyWeightsData.length > 0 ? bodyWeightsData[bodyWeightsData.length - 1] : undefined
   const fallbackWeight = latest?.weightKg ?? settings?.profile.initialWeightKg ?? 63
 
   const {

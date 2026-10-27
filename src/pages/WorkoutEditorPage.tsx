@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -16,7 +15,6 @@ import {
 } from 'lucide-react'
 import type { Exercise, WorkoutExercise } from '../types'
 import { MUSCLE_LABELS } from '../types'
-import { db } from '../lib/db'
 import { useApp } from '../context/AppContext'
 import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -35,6 +33,7 @@ import {
 } from '../lib/dates'
 import { formatNumber } from '../lib/format'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
+import { useWorkouts, useWorkoutExercises, useSets } from '../hooks/useSupabaseData'
 
 interface PreviousPerformance {
   date: string
@@ -52,22 +51,24 @@ export function WorkoutEditorPage() {
   const navigate = useNavigate()
   const { notify } = useApp()
 
-  const workout = useLiveQuery(
-    async () => (id ? ((await db.workouts.get(id)) ?? null) : null),
-    [id],
-  )
-  const workoutExercises =
-    useLiveQuery(
-      async () =>
-        id
-          ? (await db.workoutExercises.where('workoutId').equals(id).toArray()).sort((a, b) => a.order - b.order)
-          : [],
-      [id],
-    ) ?? []
-  const sets = useLiveQuery(async () => (id ? await db.sets.where('workoutId').equals(id).toArray() : []), [id]) ?? []
-  const allWorkouts = useLiveQuery(() => db.workouts.toArray(), []) ?? []
-  const allWorkoutExercises = useLiveQuery(() => db.workoutExercises.toArray(), []) ?? []
-  const allSets = useLiveQuery(() => db.sets.toArray(), []) ?? []
+  const { data: workoutsData } = useWorkouts()
+  const { data: workoutExercisesData, refetch: refetchWorkoutExercises } = useWorkoutExercises(id)
+  const { data: setsData, refetch: refetchSets } = useSets(id)
+
+  const workout = useMemo(() => {
+    if (!workoutsData || !id) return null
+    return workoutsData.find(w => w.id === id) ?? null
+  }, [workoutsData, id])
+
+  const workoutExercises = useMemo(() => {
+    if (!workoutExercisesData) return []
+    return [...workoutExercisesData].sort((a, b) => a.order - b.order)
+  }, [workoutExercisesData])
+
+  const sets = useMemo(() => {
+    if (!setsData) return []
+    return setsData
+  }, [setsData])
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [newExerciseOpen, setNewExerciseOpen] = useState(false)
@@ -77,7 +78,12 @@ export function WorkoutEditorPage() {
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [statusPending, setStatusPending] = useState(false)
 
+  const allWorkouts = workoutsData ?? []
+  const allWorkoutExercises = workoutExercisesData ?? []
+  const allSets = setsData ?? []
+
   const workoutMap = useMemo(() => new Map(allWorkouts.map((item) => [item.id, item])), [allWorkouts])
+
   const stats = workoutStats(sets, workoutExercises.length)
   const duration =
     workout?.startedAt && workout.finishedAt ? minutesBetween(workout.startedAt, workout.finishedAt) : 0
@@ -135,6 +141,7 @@ export function WorkoutEditorPage() {
         muscleGroup: exercise.muscleGroup,
       })
       notify(`${exercise.name} añadido a la sesión`)
+      await refetchWorkoutExercises()
     } catch {
       notify('No se pudo añadir el ejercicio', 'error')
     }
@@ -172,6 +179,7 @@ export function WorkoutEditorPage() {
       if (!currentLast && !previous) {
         notify('Serie en blanco: ajusta el peso y las repeticiones, y márcala como completada.', 'info')
       }
+      await refetchSets()
     } catch {
       notify('No se pudo añadir la serie', 'error')
     }
@@ -220,6 +228,8 @@ export function WorkoutEditorPage() {
       await removeWorkoutExercise(removingExercise.id)
       notify('Ejercicio eliminado de la sesión')
       setRemovingExercise(undefined)
+      await refetchWorkoutExercises()
+      await refetchSets()
     } catch {
       notify('No se pudo eliminar el ejercicio', 'error')
     }

@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { ArrowLeft, Calculator, Check, Plus, Search, UtensilsCrossed } from 'lucide-react'
 import type { MealType } from '../../types'
 import { MEAL_TYPES } from '../../types'
-import { db } from '../../lib/db'
 import { nutritionForGrams, roundTo } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
 import { addFoodEntry } from '../../lib/repositories'
@@ -13,6 +11,7 @@ import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { cn } from '../../lib/cn'
 import { FoodForm } from './FoodForm'
+import { useFoods } from '../../hooks/useSupabaseData'
 
 interface AddFoodModalProps {
   open: boolean
@@ -32,7 +31,8 @@ function normalize(text: string): string {
 
 export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', initialFoodId, onAdded }: AddFoodModalProps) {
   const { notify } = useApp()
-  const foods = useLiveQuery(() => db.foods.orderBy('name').toArray(), [])
+  const { data: foodsData } = useFoods()
+  const foods = foodsData ?? []
   const [mode, setMode] = useState<'search' | 'create'>('search')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)

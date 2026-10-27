@@ -1,9 +1,58 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function openApp(page: Page) {
-  await page.goto('/')
+const TEST_EMAIL = 'test-e2e@gymprogress.local'
+const TEST_PASSWORD = 'TestPassword123!'
+
+async function registerAndLogin(page: Page) {
+  await page.goto('/registro')
+  await expect(page.getByRole('heading', { name: 'Crear cuenta' })).toBeVisible()
+  
+  await page.locator('#email').fill(TEST_EMAIL)
+  await page.locator('#password').fill(TEST_PASSWORD)
+  await page.locator('#confirmPassword').fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: /Crear cuenta/ }).click()
+  
+  // Wait for redirect to login or home
+  await page.waitForURL(/\/login|\//)
+  
+  // If redirected to login (email confirmation required), log in
+  if (page.url().includes('/login')) {
+    await page.locator('#email').fill(TEST_EMAIL)
+    await page.locator('#password').fill(TEST_PASSWORD)
+    await page.getByRole('button', { name: /Iniciar sesión/ }).click()
+  }
+  
+  // Wait for home page
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   await expect(page.getByText('Datos guardados en este dispositivo. Sin nube, sin cuentas.')).toBeVisible()
+}
+
+async function login(page: Page) {
+  await page.goto('/login')
+  await expect(page.getByRole('heading', { name: 'Bienvenido a GymProgress' })).toBeVisible()
+  
+  await page.locator('#email').fill(TEST_EMAIL)
+  await page.locator('#password').fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: /Iniciar sesión/ }).click()
+  
+  // Wait for home page
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByText('Datos guardados en este dispositivo. Sin nube, sin cuentas.')).toBeVisible()
+}
+
+async function ensureLoggedIn(page: Page) {
+  await page.goto('/')
+  // Check if we're on login page (not authenticated)
+  if (page.url().includes('/login') || page.url().includes('/registro')) {
+    await login(page)
+  } else {
+    // Check if we see the home page content
+    const heading = page.getByRole('heading', { level: 1 })
+    if (await heading.isVisible().catch(() => false)) {
+      return // Already logged in
+    }
+    await login(page)
+  }
 }
 
 async function createFood(
@@ -49,7 +98,7 @@ async function addFoodToMeal(page: Page, foodName: string, grams: number, meal =
 }
 
 test('nutrición: crea un alimento, registra gramos y conserva la instantánea', async ({ page }) => {
-  await openApp(page)
+  await ensureLoggedIn(page)
 
   // Objetivos iniciales y aviso de energía independiente.
   await expect(page.getByRole('img', { name: /Proteínas: 0 de 125 g/ })).toBeVisible()

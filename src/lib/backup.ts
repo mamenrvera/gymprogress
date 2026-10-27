@@ -1,20 +1,22 @@
-import type { BackupFile, BodyWeight, Exercise, Food, FoodEntry, Settings, Workout, WorkoutExercise, WorkoutSet } from '../types'
-import { db } from './db'
-import { backupSchema } from './validators'
-import { createDefaultSettings, createSeedExercises } from './seed'
+import { fetchFoodsFromSupabase, fetchEntriesFromSupabase, fetchExercisesFromSupabase, fetchWorkoutsFromSupabase, fetchWorkoutExercisesFromSupabase, fetchSetsFromSupabase, fetchBodyWeightsFromSupabase, fetchSettingsFromSupabase, getCurrentUserId } from './supabase-data'
+import { getSupabaseClient } from './supabase'
 import { nowISO } from './id'
 
-export async function createBackup(): Promise<BackupFile> {
+export async function createBackup(): Promise<Record<string, unknown>> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const [settings, foods, entries, exercises, workouts, workoutExercises, sets, bodyWeights] = await Promise.all([
-    db.settings.toArray(),
-    db.foods.toArray(),
-    db.entries.toArray(),
-    db.exercises.toArray(),
-    db.workouts.toArray(),
-    db.workoutExercises.toArray(),
-    db.sets.toArray(),
-    db.bodyWeights.toArray(),
+    fetchSettingsFromSupabase(userId),
+    fetchFoodsFromSupabase(userId),
+    fetchEntriesFromSupabase(userId),
+    fetchExercisesFromSupabase(userId),
+    fetchWorkoutsFromSupabase(userId),
+    fetchWorkoutExercisesFromSupabase(userId),
+    fetchSetsFromSupabase(userId),
+    fetchBodyWeightsFromSupabase(userId),
   ])
+
   return {
     app: 'GymProgress',
     version: 1,
@@ -38,82 +40,6 @@ export async function downloadBackup(): Promise<string> {
   return anchor.download
 }
 
-export async function importBackupFile(file: File): Promise<void> {
-  let raw: unknown
-  try {
-    raw = JSON.parse(await file.text())
-  } catch {
-    throw new Error('El archivo no es un JSON válido')
-  }
-  const parsed = backupSchema.safeParse(raw)
-  if (!parsed.success) {
-    throw new Error('El archivo no tiene el formato de copia de seguridad de GymProgress')
-  }
-  const data = parsed.data.data
-  const settings = data.settings as unknown as Settings[]
-  if (!settings.some((item) => item.id === 'app')) {
-    throw new Error('La copia no contiene una configuración válida')
-  }
-
-  await db.transaction(
-    'rw',
-    [db.settings, db.foods, db.entries, db.exercises, db.workouts, db.workoutExercises, db.sets, db.bodyWeights],
-    async () => {
-      await Promise.all([
-        db.settings.clear(),
-        db.foods.clear(),
-        db.entries.clear(),
-        db.exercises.clear(),
-        db.workouts.clear(),
-        db.workoutExercises.clear(),
-        db.sets.clear(),
-        db.bodyWeights.clear(),
-      ])
-      await db.settings.bulkPut(settings)
-      await db.foods.bulkPut(data.foods as unknown as Food[])
-      await db.entries.bulkPut(data.entries as unknown as FoodEntry[])
-      await db.exercises.bulkPut(data.exercises as unknown as Exercise[])
-      await db.workouts.bulkPut(data.workouts as unknown as Workout[])
-      await db.workoutExercises.bulkPut(data.workoutExercises as unknown as WorkoutExercise[])
-      await db.sets.bulkPut(data.sets as unknown as WorkoutSet[])
-      await db.bodyWeights.bulkPut(data.bodyWeights as unknown as BodyWeight[])
-    },
-  )
-}
-
-export async function clearHistory(): Promise<void> {
-  await db.transaction('rw', [db.entries, db.workouts, db.workoutExercises, db.sets, db.bodyWeights], async () => {
-    await Promise.all([
-      db.entries.clear(),
-      db.workouts.clear(),
-      db.workoutExercises.clear(),
-      db.sets.clear(),
-      db.bodyWeights.clear(),
-    ])
-  })
-}
-
-export async function resetApplication(): Promise<void> {
-  await db.transaction(
-    'rw',
-    [db.settings, db.foods, db.entries, db.exercises, db.workouts, db.workoutExercises, db.sets, db.bodyWeights],
-    async () => {
-      await Promise.all([
-        db.settings.clear(),
-        db.foods.clear(),
-        db.entries.clear(),
-        db.exercises.clear(),
-        db.workouts.clear(),
-        db.workoutExercises.clear(),
-        db.sets.clear(),
-        db.bodyWeights.clear(),
-      ])
-      await db.settings.add(createDefaultSettings())
-      await db.exercises.bulkAdd(createSeedExercises())
-    },
-  )
-}
-
 export async function getStorageInfo(): Promise<{ usedBytes?: number; quotaBytes?: number; persisted?: boolean }> {
   try {
     const estimate = await navigator.storage?.estimate?.()
@@ -122,4 +48,61 @@ export async function getStorageInfo(): Promise<{ usedBytes?: number; quotaBytes
   } catch {
     return {}
   }
+}
+
+export async function clearHistory(): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const client = getSupabaseClient()
+
+  await client.from('entries').delete().eq('user_id', userId)
+  const { data: workouts } = await client.from('workouts').select('id').eq('user_id', userId)
+  const workoutIds = (workouts || []).map((w: { id: string }) => w.id)
+  if (workoutIds.length > 0) {
+    await client.from('sets').delete().in('workout_id', workoutIds)
+    await client.from('workout_exercises').delete().in('workout_id', workoutIds)
+  }
+  await client.from('workouts').delete().eq('user_id', userId)
+  await client.from('body_weights').delete().eq('user_id', userId)
+}
+
+export async function resetApplication(): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const client = getSupabaseClient()
+
+  await client.from('entries').delete().eq('user_id', userId)
+  const { data: workouts } = await client.from('workouts').select('id').eq('user_id', userId)
+  const workoutIds = (workouts || []).map((w: { id: string }) => w.id)
+  if (workoutIds.length > 0) {
+    await client.from('sets').delete().in('workout_id', workoutIds)
+    await client.from('workout_exercises').delete().in('workout_id', workoutIds)
+  }
+  await client.from('workouts').delete().eq('user_id', userId)
+  await client.from('body_weights').delete().eq('user_id', userId)
+  await client.from('foods').delete().eq('user_id', userId)
+  await client.from('exercises').delete().eq('user_id', userId)
+
+  await client.from('profiles').update({
+    name: '',
+    initial_weight_kg: 63,
+    height_cm: 163,
+    goal: 'perder_grasa_ganar_musculo',
+  }).eq('id', userId)
+
+  await client.from('targets').update({
+    calories: 1400,
+    protein: 125,
+    fat: 40,
+    carbs: 90,
+    carb_min: 85,
+    carb_max: 95,
+  }).eq('user_id', userId)
+
+  await client.from('user_preferences').update({ theme: 'dark' }).eq('user_id', userId)
+}
+
+export async function importBackupFile(_file: File): Promise<void> {
+  // Simplified import - to be implemented
+  throw new Error('La importación de backups se realizará en una futura actualización')
 }

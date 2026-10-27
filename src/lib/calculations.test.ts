@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { FoodEntry, WorkoutSet } from '../types'
 import {
   bmi,
+  bmiBarPosition,
+  bmiCategory,
   clamp,
   EMPTY_TOTALS,
   energyGap,
@@ -15,6 +17,7 @@ import {
   setVolume,
   sumEntries,
   targetMacroEnergy,
+  weightPointColor,
   workoutStats,
 } from './calculations'
 
@@ -151,6 +154,109 @@ describe('energía y macros', () => {
     })
     expect(distribution.map((item) => item.value)).toEqual([500, 360, 360])
     expect(distribution.map((item) => item.name)).toEqual(['Proteínas', 'Carbohidratos', 'Grasas'])
+  })
+})
+
+describe('IMC', () => {
+  it('calcula el IMC correctamente', () => {
+    // 63 kg, 163 cm → 63 / 1.63² = 23.7
+    expect(bmi(63, 163)).toBe(23.7)
+    // 62.5 kg, 163 cm → 62.5 / 1.63² = 23.5
+    expect(bmi(62.5, 163)).toBe(23.5)
+  })
+
+  it('devuelve 0 con datos inválidos', () => {
+    expect(bmi(0, 163)).toBe(0)
+    expect(bmi(63, 0)).toBe(0)
+  })
+
+  it('clasifica bajo peso (< 18.5)', () => {
+    const cat = bmiCategory(17)
+    expect(cat.label).toBe('Bajo peso')
+    expect(cat.range).toBe('< 18,5')
+  })
+
+  it('clasifica peso normal (18.5 - 24.9)', () => {
+    const cat = bmiCategory(22)
+    expect(cat.label).toBe('Peso normal')
+    expect(cat.range).toBe('18,5 – 24,9')
+  })
+
+  it('clasifica sobrepeso (25 - 29.9)', () => {
+    const cat = bmiCategory(27)
+    expect(cat.label).toBe('Sobrepeso')
+    expect(cat.range).toBe('25 – 29,9')
+  })
+
+  it('clasifica obesidad grado I (30 - 34.9)', () => {
+    const cat = bmiCategory(32)
+    expect(cat.label).toBe('Obesidad grado I')
+    expect(cat.range).toBe('30 – 34,9')
+  })
+
+  it('clasifica obesidad grado II (35 - 39.9)', () => {
+    const cat = bmiCategory(37)
+    expect(cat.label).toBe('Obesidad grado II')
+    expect(cat.range).toBe('35 – 39,9')
+  })
+
+  it('clasifica obesidad grado III (>= 40)', () => {
+    const cat = bmiCategory(42)
+    expect(cat.label).toBe('Obesidad grado III')
+    expect(cat.range).toBe('≥ 40')
+  })
+
+  it('verifica límites exactos', () => {
+    expect(bmiCategory(18.4).label).toBe('Bajo peso')
+    expect(bmiCategory(18.5).label).toBe('Peso normal')
+    expect(bmiCategory(24.9).label).toBe('Peso normal')
+    expect(bmiCategory(25).label).toBe('Sobrepeso')
+    expect(bmiCategory(29.9).label).toBe('Sobrepeso')
+    expect(bmiCategory(30).label).toBe('Obesidad grado I')
+    expect(bmiCategory(34.9).label).toBe('Obesidad grado I')
+    expect(bmiCategory(35).label).toBe('Obesidad grado II')
+    expect(bmiCategory(39.9).label).toBe('Obesidad grado II')
+    expect(bmiCategory(40).label).toBe('Obesidad grado III')
+  })
+
+  it('devuelve "Sin datos" para IMC <= 0', () => {
+    expect(bmiCategory(0).label).toBe('Sin datos')
+  })
+
+  it('calcula posición en la barra correctamente', () => {
+    // BMI 15 → 0%
+    expect(bmiBarPosition(15)).toBe(0)
+    // BMI 45 → 100%
+    expect(bmiBarPosition(45)).toBe(100)
+    // BMI 30 → 50%
+    expect(bmiBarPosition(30)).toBe(50)
+    // BMI 22.5 → 25%
+    expect(bmiBarPosition(22.5)).toBe(25)
+  })
+
+  it('comprime valores fuera del rango de la barra', () => {
+    // BMI < 15 → 0%
+    expect(bmiBarPosition(10)).toBe(0)
+    // BMI > 45 → 100%
+    expect(bmiBarPosition(50)).toBe(100)
+  })
+})
+
+describe('color de peso corporal', () => {
+  it('primer registro → color neutro (gris)', () => {
+    expect(weightPointColor(70, undefined)).toBe('#94a3b8')
+  })
+
+  it('bajada de peso → verde', () => {
+    expect(weightPointColor(68, 70)).toBe('#bef264')
+  })
+
+  it('subida de peso → rojo', () => {
+    expect(weightPointColor(72, 70)).toBe('#fb7185')
+  })
+
+  it('peso idéntico → gris', () => {
+    expect(weightPointColor(70, 70)).toBe('#94a3b8')
   })
 })
 

@@ -14,12 +14,28 @@ import type {
   WorkoutStatus,
 } from '../types'
 import type { BodyWeightFormValues, ExerciseFormValues, FoodFormValues, SettingsFormValues, WorkoutFormValues } from './validators'
-import { db } from './db'
 import { nutritionForGrams } from './calculations'
 import { newId, nowISO } from './id'
+import {
+  upsertFoodToSupabase,
+  deleteFoodFromSupabase,
+  upsertEntryToSupabase,
+  deleteEntryFromSupabase,
+  upsertExerciseToSupabase,
+  deleteExerciseFromSupabase,
+  upsertWorkoutToSupabase,
+  deleteWorkoutFromSupabase,
+  upsertWorkoutExerciseToSupabase,
+  deleteWorkoutExerciseFromSupabase,
+  upsertSetToSupabase,
+  deleteSetFromSupabase,
+  upsertBodyWeightToSupabase,
+  deleteBodyWeightFromSupabase,
+  upsertSettingsToSupabase,
+  getCurrentUserId,
+} from './supabase-data'
 
 // ——— Alimentos ———
-
 function per100FromForm(values: FoodFormValues): NutritionPer100 {
   return {
     calories: values.caloriesPer100,
@@ -31,43 +47,46 @@ function per100FromForm(values: FoodFormValues): NutritionPer100 {
 }
 
 export async function saveFood(values: FoodFormValues, existingId?: string): Promise<Food> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const timestamp = nowISO()
+  let food: Food
   if (existingId) {
-    const existing = await db.foods.get(existingId)
-    if (!existing) throw new Error('El alimento ya no existe')
-    const updated: Food = {
-      ...existing,
+    food = {
+      id: existingId,
       name: values.name,
       brand: values.brand,
       category: values.category,
       per100: per100FromForm(values),
       notes: values.notes,
+      createdAt: timestamp,
       updatedAt: timestamp,
     }
-    await db.foods.put(updated)
-    return updated
+  } else {
+    food = {
+      id: newId(),
+      name: values.name,
+      brand: values.brand,
+      category: values.category,
+      per100: per100FromForm(values),
+      notes: values.notes,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
   }
-  const food: Food = {
-    id: newId(),
-    name: values.name,
-    brand: values.brand,
-    category: values.category,
-    per100: per100FromForm(values),
-    notes: values.notes,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }
-  await db.foods.add(food)
+
+  await upsertFoodToSupabase(food, userId)
   return food
 }
 
 export async function deleteFood(id: string): Promise<void> {
-  // Las entradas guardan una copia de los valores, por lo que el historial se conserva.
-  await db.foods.delete(id)
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteFoodFromSupabase(id, userId)
 }
 
 // ——— Registro de comidas ———
-
 export async function addFoodEntry(params: {
   food: Food
   grams: number
@@ -75,6 +94,9 @@ export async function addFoodEntry(params: {
   meal: MealType
 }): Promise<FoodEntry> {
   if (!Number.isFinite(params.grams) || params.grams <= 0) throw new Error('Los gramos deben ser mayores que 0')
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const nutrition = nutritionForGrams(params.food.per100, params.grams)
   const timestamp = nowISO()
   const entry: FoodEntry = {
@@ -90,7 +112,8 @@ export async function addFoodEntry(params: {
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  await db.entries.add(entry)
+
+  await upsertEntryToSupabase(entry, userId)
   return entry
 }
 
@@ -98,68 +121,106 @@ export async function updateFoodEntry(
   id: string,
   updates: { grams?: number; meal?: MealType },
 ): Promise<FoodEntry> {
-  const existing = await db.entries.get(id)
-  if (!existing) throw new Error('La entrada ya no existe')
-  const grams = updates.grams ?? existing.grams
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  // We need the existing entry to recalculate nutrition
+  // Fetch existing entry from Supabase to recalculate nutrition
+  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+    .from('entries')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single()
+  if (fetchError || !existing) throw new Error('La entrada ya no existe')
+
+  const grams = updates.grams ?? (existing.grams as number)
   if (!Number.isFinite(grams) || grams <= 0) throw new Error('Los gramos deben ser mayores que 0')
-  const nutrition = nutritionForGrams(existing.per100, grams)
+
+  const per100: NutritionPer100 = {
+    calories: (existing.calories_declared as number) / ((existing.grams as number) / 100),
+    protein: (existing.protein as number) / ((existing.grams as number) / 100),
+    carbs: (existing.carbs as number) / ((existing.grams as number) / 100),
+    fat: (existing.fat as number) / ((existing.grams as number) / 100),
+    fiber: (existing.fiber as number) / ((existing.grams as number) / 100),
+  }
+  const nutrition = nutritionForGrams(per100, grams)
   const updated: FoodEntry = {
-    ...existing,
+    id,
+    date: existing.date as string,
+    meal: (updates.meal ?? existing.meal) as MealType,
+    foodId: existing.food_id as string | undefined,
+    foodName: existing.food_name as string,
+    brand: existing.brand as string | undefined,
     grams,
-    meal: updates.meal ?? existing.meal,
-    ...nutrition,
+    per100,
+    caloriesDeclared: nutrition.caloriesDeclared,
+    caloriesEstimated: nutrition.caloriesEstimated,
+    protein: nutrition.protein,
+    carbs: nutrition.carbs,
+    fat: nutrition.fat,
+    fiber: nutrition.fiber,
+    createdAt: existing.created_at as string,
     updatedAt: nowISO(),
   }
-  await db.entries.put(updated)
+
+  await upsertEntryToSupabase(updated, userId)
   return updated
 }
 
 export async function deleteFoodEntry(id: string): Promise<void> {
-  await db.entries.delete(id)
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteEntryFromSupabase(id, userId)
 }
 
 // ——— Ejercicios ———
-
 export async function saveExercise(values: ExerciseFormValues, existingId?: string): Promise<Exercise> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const timestamp = nowISO()
+  let exercise: Exercise
   if (existingId) {
-    const existing = await db.exercises.get(existingId)
-    if (!existing) throw new Error('El ejercicio ya no existe')
-    const updated: Exercise = {
-      ...existing,
+    exercise = {
+      id: existingId,
       name: values.name,
       muscleGroup: values.muscleGroup as MuscleGroup,
       equipment: values.equipment,
       notes: values.notes,
+      createdAt: timestamp,
       updatedAt: timestamp,
     }
-    await db.exercises.put(updated)
-    return updated
+  } else {
+    exercise = {
+      id: newId(),
+      name: values.name,
+      muscleGroup: values.muscleGroup as MuscleGroup,
+      equipment: values.equipment,
+      notes: values.notes,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
   }
-  const exercise: Exercise = {
-    id: newId(),
-    name: values.name,
-    muscleGroup: values.muscleGroup as MuscleGroup,
-    equipment: values.equipment,
-    notes: values.notes,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }
-  await db.exercises.add(exercise)
+
+  await upsertExerciseToSupabase(exercise, userId)
   return exercise
 }
 
 export async function deleteExercise(id: string): Promise<void> {
-  // Las sesiones guardan el nombre del ejercicio como copia.
-  await db.exercises.delete(id)
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteExerciseFromSupabase(id, userId)
 }
 
 // ——— Sesiones de entrenamiento ———
-
 export async function createWorkout(
   values: WorkoutFormValues,
   options: { startNow: boolean } = { startNow: true },
 ): Promise<Workout> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const timestamp = nowISO()
   const workout: Workout = {
     id: newId(),
@@ -171,7 +232,8 @@ export async function createWorkout(
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  await db.workouts.add(workout)
+
+  await upsertWorkoutToSupabase(workout, userId)
   return workout
 }
 
@@ -179,46 +241,100 @@ export async function updateWorkoutDetails(
   id: string,
   values: Pick<WorkoutFormValues, 'name' | 'date' | 'notes'>,
 ): Promise<void> {
-  await db.workouts.update(id, {
-    name: values.name,
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single()
+  if (fetchError || !existing) throw new Error('La sesión no existe')
+
+  const workout: Workout = {
+    id,
     date: values.date,
+    name: values.name,
     notes: values.notes,
+    status: existing.status as WorkoutStatus,
+    startedAt: existing.started_at as string | undefined,
+    finishedAt: existing.finished_at as string | undefined,
+    createdAt: existing.created_at as string,
     updatedAt: nowISO(),
-  })
+  }
+
+  await upsertWorkoutToSupabase(workout, userId)
 }
 
 export async function setWorkoutStatus(id: string, status: WorkoutStatus): Promise<void> {
-  const workout = await db.workouts.get(id)
-  if (!workout) throw new Error('La sesión no existe')
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single()
+  if (fetchError || !existing) throw new Error('La sesión no existe')
+
   const timestamp = nowISO()
   const patch: Partial<Workout> = { status, updatedAt: timestamp }
   if (status === 'in_progress') {
-    patch.startedAt = workout.startedAt ?? timestamp
+    patch.startedAt = (existing.started_at as string) ?? timestamp
     patch.finishedAt = undefined
   } else if (status === 'completed') {
-    patch.startedAt = workout.startedAt ?? timestamp
+    patch.startedAt = (existing.started_at as string) ?? timestamp
     patch.finishedAt = timestamp
   } else if (status === 'planned') {
     patch.startedAt = undefined
     patch.finishedAt = undefined
   }
-  await db.workouts.update(id, patch)
+
+  const workout: Workout = {
+    id,
+    date: existing.date as string,
+    name: existing.name as string,
+    notes: existing.notes as string | undefined,
+    status,
+    startedAt: patch.startedAt,
+    finishedAt: patch.finishedAt,
+    createdAt: existing.created_at as string,
+    updatedAt: timestamp,
+  }
+
+  await upsertWorkoutToSupabase(workout, userId)
 }
 
 export async function deleteWorkout(id: string): Promise<void> {
-  await db.transaction('rw', db.workouts, db.workoutExercises, db.sets, async () => {
-    await db.sets.where('workoutId').equals(id).delete()
-    await db.workoutExercises.where('workoutId').equals(id).delete()
-    await db.workouts.delete(id)
-  })
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteWorkoutFromSupabase(id, userId)
 }
 
 export async function addExerciseToWorkout(
   workoutId: string,
   exercise: { id?: string; name: string; muscleGroup: MuscleGroup },
 ): Promise<WorkoutExercise> {
-  const existing = await db.workoutExercises.where('workoutId').equals(workoutId).toArray()
-  const order = existing.reduce((max, item) => Math.max(max, item.order), 0) + 1
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  // Verify workout belongs to user
+  const { data: workout, error: wError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('id')
+    .eq('id', workoutId)
+    .eq('user_id', userId)
+    .single()
+  if (wError || !workout) throw new Error('La sesión no existe o no te pertenece')
+
+  const existing = await (await import('./supabase')).getSupabaseClient()
+    .from('workout_exercises')
+    .select('order')
+    .eq('workout_id', workoutId)
+  const order = (existing.data || []).reduce((max: number, item: { order: number }) => Math.max(max, item.order), 0) + 1
+
   const workoutExercise: WorkoutExercise = {
     id: newId(),
     workoutId,
@@ -228,16 +344,15 @@ export async function addExerciseToWorkout(
     order,
     createdAt: nowISO(),
   }
-  await db.workoutExercises.add(workoutExercise)
-  await db.workouts.update(workoutId, { updatedAt: nowISO() })
+
+  await upsertWorkoutExerciseToSupabase(workoutExercise)
   return workoutExercise
 }
 
 export async function removeWorkoutExercise(id: string): Promise<void> {
-  await db.transaction('rw', db.workoutExercises, db.sets, async () => {
-    await db.sets.where('workoutExerciseId').equals(id).delete()
-    await db.workoutExercises.delete(id)
-  })
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteWorkoutExerciseFromSupabase(id)
 }
 
 export async function addSet(params: {
@@ -249,8 +364,24 @@ export async function addSet(params: {
   isWarmup?: boolean
   completed?: boolean
 }): Promise<WorkoutSet> {
-  const existing = await db.sets.where('workoutExerciseId').equals(params.workoutExerciseId).toArray()
-  const setNumber = existing.reduce((max, set) => Math.max(max, set.setNumber), 0) + 1
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  // Verify workout belongs to user
+  const { data: workout, error: wError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('id')
+    .eq('id', params.workoutId)
+    .eq('user_id', userId)
+    .single()
+  if (wError || !workout) throw new Error('La sesión no existe o no te pertenece')
+
+  const { data: existing } = await (await import('./supabase')).getSupabaseClient()
+    .from('sets')
+    .select('set_number')
+    .eq('workout_exercise_id', params.workoutExerciseId)
+  const setNumber = (existing || []).reduce((max: number, set: { set_number: number }) => Math.max(max, set.set_number), 0) + 1
+
   const timestamp = nowISO()
   const set: WorkoutSet = {
     id: newId(),
@@ -265,7 +396,8 @@ export async function addSet(params: {
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  await db.sets.add(set)
+
+  await upsertSetToSupabase(set)
   return set
 }
 
@@ -273,28 +405,72 @@ export async function updateSet(
   id: string,
   patch: Partial<Pick<WorkoutSet, 'weightKg' | 'reps' | 'rir' | 'isWarmup' | 'completed'>>,
 ): Promise<void> {
-  await db.sets.update(id, { ...patch, updatedAt: nowISO() })
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  // Fetch existing set to merge
+  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+    .from('sets')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (fetchError || !existing) throw new Error('La serie no existe')
+
+  // Verify ownership via workout
+  const { data: workout, error: wError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('id')
+    .eq('id', existing.workout_id as string)
+    .eq('user_id', userId)
+    .single()
+  if (wError || !workout) throw new Error('No autorizado')
+
+  const updated: WorkoutSet = {
+    id,
+    workoutId: existing.workout_id as string,
+    workoutExerciseId: existing.workout_exercise_id as string,
+    setNumber: existing.set_number as number,
+    weightKg: patch.weightKg ?? (existing.weight_kg as number),
+    reps: patch.reps ?? (existing.reps as number),
+    rir: patch.rir ?? (existing.rir as number | undefined),
+    isWarmup: patch.isWarmup ?? (existing.is_warmup as boolean),
+    completed: patch.completed ?? (existing.completed as boolean),
+    createdAt: existing.created_at as string,
+    updatedAt: nowISO(),
+  }
+
+  await upsertSetToSupabase(updated)
 }
 
 export async function deleteSet(id: string): Promise<void> {
-  await db.sets.delete(id)
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  // Verify ownership via workout
+  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+    .from('sets')
+    .select('workout_id')
+    .eq('id', id)
+    .single()
+  if (fetchError || !existing) throw new Error('La serie no existe')
+
+  const { data: workout, error: wError } = await (await import('./supabase')).getSupabaseClient()
+    .from('workouts')
+    .select('id')
+    .eq('id', existing.workout_id as string)
+    .eq('user_id', userId)
+    .single()
+  if (wError || !workout) throw new Error('No autorizado')
+
+  await deleteSetFromSupabase(id)
 }
 
 // ——— Peso corporal ———
-
 export async function upsertBodyWeight(values: BodyWeightFormValues): Promise<BodyWeight> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
   const timestamp = nowISO()
-  const existing = await db.bodyWeights.where('date').equals(values.date).first()
-  if (existing) {
-    const updated: BodyWeight = {
-      ...existing,
-      weightKg: values.weightKg,
-      note: values.note,
-      updatedAt: timestamp,
-    }
-    await db.bodyWeights.put(updated)
-    return updated
-  }
   const record: BodyWeight = {
     id: newId(),
     date: values.date,
@@ -303,28 +479,36 @@ export async function upsertBodyWeight(values: BodyWeightFormValues): Promise<Bo
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  await db.bodyWeights.add(record)
+
+  // Check if exists for this date
+  const { data: existing } = await (await import('./supabase')).getSupabaseClient()
+    .from('body_weights')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('date', values.date)
+    .single()
+
+  if (existing) {
+    record.id = existing.id as string
+  }
+
+  await upsertBodyWeightToSupabase(record, userId)
   return record
 }
 
 export async function deleteBodyWeight(id: string): Promise<void> {
-  await db.bodyWeights.delete(id)
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteBodyWeightFromSupabase(id, userId)
 }
 
 // ——— Ajustes ———
-
 export async function saveSettings(values: SettingsFormValues): Promise<void> {
-  const existing = await db.settings.get('app')
-  const current: Settings = existing ?? {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  const settings: Settings = {
     id: 'app',
-    profile: { initialWeightKg: 63, heightCm: 163, goal: 'perder_grasa_ganar_musculo' },
-    targets: { calories: 1400, protein: 125, fat: 40, carbs: 90, carbMin: 85, carbMax: 95 },
-    theme: 'dark',
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
-  }
-  const updated: Settings = {
-    ...current,
     profile: {
       name: values.name,
       initialWeightKg: values.initialWeightKg,
@@ -339,13 +523,18 @@ export async function saveSettings(values: SettingsFormValues): Promise<void> {
       carbMin: values.carbMin,
       carbMax: values.carbMax,
     },
+    theme: 'dark',
+    createdAt: nowISO(),
     updatedAt: nowISO(),
   }
-  await db.settings.put(updated)
+
+  await upsertSettingsToSupabase(settings, userId)
 }
 
 export async function setTheme(theme: ThemeMode): Promise<void> {
-  const existing = await db.settings.get('app')
-  if (!existing) return
-  await db.settings.update('app', { theme, updatedAt: nowISO() })
+  const userId = await getCurrentUserId()
+  if (!userId) return
+
+  const { upsertUserPreferences } = await import('./supabase')
+  await upsertUserPreferences(userId, theme)
 }

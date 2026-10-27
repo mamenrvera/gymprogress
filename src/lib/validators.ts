@@ -41,39 +41,83 @@ export const foodSchema = z
     brand: optionalText(60),
     category: optionalText(40),
     caloriesPer100: z
-      .number({ invalid_type_error: 'Introduce un número' })
+      .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
-      .max(900, 'Máximo 900 kcal por 100 g'),
+      .max(900, 'Máximo 900 kcal por 100 g')
+      .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
     proteinPer100: z
-      .number({ invalid_type_error: 'Introduce un número' })
+      .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
-      .max(100, 'Máximo 100 g por 100 g'),
+      .max(100, 'Máximo 100 g por 100 g')
+      .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
     carbsPer100: z
-      .number({ invalid_type_error: 'Introduce un número' })
+      .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
-      .max(100, 'Máximo 100 g por 100 g'),
+      .max(100, 'Máximo 100 g por 100 g')
+      .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
     fatPer100: z
-      .number({ invalid_type_error: 'Introduce un número' })
+      .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
-      .max(100, 'Máximo 100 g por 100 g'),
+      .max(100, 'Máximo 100 g por 100 g')
+      .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
     fiberPer100: z
-      .number({ invalid_type_error: 'Introduce un número' })
+      .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
-      .max(100, 'Máximo 100 g por 100 g'),
+      .max(100, 'Máximo 100 g por 100 g')
+      .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
     notes: optionalText(300),
   })
-  .superRefine((value, ctx) => {
-    const macroTotal = value.proteinPer100 + value.carbsPer100 + value.fatPer100
-    if (macroTotal > 105) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['proteinPer100'],
-        message: 'La suma de proteínas, carbohidratos y grasas no puede superar 100 g por 100 g',
-      })
-    }
-  })
+  // No se rechaza automáticamente si la suma de macros supera 100 g.
+  // Se muestra una advertencia en el formulario (ver getFoodMacroWarnings).
 
 export type FoodFormValues = z.infer<typeof foodSchema>
+
+/**
+ * Convierte una cadena con coma o punto decimal a número.
+ * Devuelve NaN si el formato es inválido o el campo está vacío.
+ * No convierte automáticamente valores inválidos en cero.
+ */
+export function parseDecimal(value: unknown): number {
+  if (typeof value === 'number') return value
+  if (typeof value !== 'string') return NaN
+  const trimmed = value.trim()
+  if (trimmed === '') return NaN
+  // Reemplazar coma por punto (formato español)
+  const normalized = trimmed.replace(',', '.')
+  // Rechazar si hay más de un separador decimal o caracteres no numéricos
+  if ((normalized.match(/\./g) || []).length > 1) return NaN
+  if (!/^-?\d*\.?\d*$/.test(normalized)) return NaN
+  const num = Number(normalized)
+  return num
+}
+
+/**
+ * Devuelve advertencias (no errores) sobre la coherencia de los macronutrientes.
+ * No bloquea el guardado; solo informa al usuario para que revise.
+ */
+export function getFoodMacroWarnings(values: {
+  proteinPer100: number
+  carbsPer100: number
+  fatPer100: number
+  fiberPer100: number
+}): string[] {
+  const warnings: string[] = []
+  const macroTotal = values.proteinPer100 + values.carbsPer100 + values.fatPer100
+
+  if (macroTotal > 100) {
+    warnings.push(
+      `La suma de proteínas (${values.proteinPer100} g) + carbohidratos (${values.carbsPer100} g) + grasas (${values.fatPer100} g) = ${macroTotal.toFixed(1)} g supera los 100 g del alimento. Verifica que los valores correspondan a gramos por 100 g y no por ración. La fibra suele estar incluida en los carbohidratos totales de la etiqueta.`,
+    )
+  }
+
+  if (values.fiberPer100 > 0 && values.fiberPer100 > values.carbsPer100) {
+    warnings.push(
+      `La fibra (${values.fiberPer100} g) es mayor que los carbohidratos totales (${values.carbsPer100} g). Comprueba si la fibra ya está incluida en los carbohidratos de la etiqueta.`,
+    )
+  }
+
+  return warnings
+}
 
 export const entrySchema = z.object({
   grams: z

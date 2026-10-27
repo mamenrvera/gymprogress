@@ -8,12 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import type { Settings, ThemeMode } from '../types'
-import { db } from '../lib/db'
-import { setTheme as persistTheme } from '../lib/repositories'
 import { applyTheme } from '../lib/theme'
 import { todayISO } from '../lib/dates'
+import { fetchSettingsFromSupabase, upsertSettingsToSupabase } from '../lib/supabase-data'
+import { upsertUserPreferences } from '../lib/supabase'
+import { useAuth } from './AuthContext'
 
 export type ToastKind = 'success' | 'error' | 'info'
 
@@ -34,6 +34,7 @@ interface AppContextValue {
   toasts: Toast[]
   notify: (message: string, kind?: ToastKind) => void
   dismissToast: (id: number) => void
+  loading: boolean
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
@@ -50,21 +51,68 @@ function getInitialTheme(): ThemeMode {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const settings = useLiveQuery(() => db.settings.get('app'), [])
+  const { user, status: authStatus } = useAuth()
+  const [settings, setSettings] = useState<Settings | undefined>(undefined)
   const [selectedDate, setSelectedDate] = useState(todayISO)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
   const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme)
+  const [loading, setLoading] = useState(true)
 
+  // Apply theme to DOM
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
+  // Load settings from Supabase when authenticated
   useEffect(() => {
-    if (settings?.theme && settings.theme !== theme) {
-      setThemeState(settings.theme)
+    if (authStatus === 'loading') return
+    if (!user) {
+      setSettings(undefined)
+      setLoading(false)
+      return
     }
-  }, [settings?.theme, theme])
+
+    setLoading(true)
+    void (async () => {
+      try {
+        const remoteSettings = await fetchSettingsFromSupabase(user.id)
+        if (remoteSettings) {
+          setSettings(remoteSettings)
+          setThemeState(remoteSettings.theme)
+          applyTheme(remoteSettings.theme)
+          localStorage.setItem('gymprogress-theme', remoteSettings.theme)
+        } else {
+          // No remote settings yet (new user) - use defaults
+          const now = new Date().toISOString()
+          const defaultSettings: Settings = {
+            id: 'app',
+            profile: { initialWeightKg: 63, heightCm: 163, goal: 'perder_grasa_ganar_musculo' },
+            targets: { calories: 1400, protein: 125, fat: 40, carbs: 90, carbMin: 85, carbMax: 95 },
+            theme: 'dark',
+            createdAt: now,
+            updatedAt: now,
+          }
+          setSettings(defaultSettings)
+          setThemeState('dark')
+        }
+      } catch (e) {
+        console.error('[AppContext] Error loading settings from Supabase:', e)
+        // Fallback to defaults
+        const now = new Date().toISOString()
+        setSettings({
+          id: 'app',
+          profile: { initialWeightKg: 63, heightCm: 163, goal: 'perder_grasa_ganar_musculo' },
+          targets: { calories: 1400, protein: 125, fat: 40, carbs: 90, carbMin: 85, carbMax: 95 },
+          theme: 'dark',
+          createdAt: now,
+          updatedAt: now,
+        })
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [user, authStatus])
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id))
@@ -86,13 +134,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (nextTheme: ThemeMode) => {
       setThemeState(nextTheme)
       applyTheme(nextTheme)
-      try {
-        await persistTheme(nextTheme)
-      } catch {
-        notify('No se pudo guardar el tema', 'error')
+      localStorage.setItem('gymprogress-theme', nextTheme)
+      if (user) {
+        try {
+          await upsertUserPreferences(user.id, nextTheme)
+          // Also update settings in Supabase
+          if (settings) {
+            await upsertSettingsToSupabase({ ...settings, theme: nextTheme }, user.id)
+            setSettings(prev => prev ? { ...prev, theme: nextTheme } : prev)
+          }
+        } catch {
+          notify('No se pudo guardar el tema', 'error')
+        }
       }
     },
-    [notify],
+    [user, settings, notify],
   )
 
   const toggleTheme = useCallback(async () => {
@@ -113,8 +169,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toasts,
       notify,
       dismissToast,
+      loading,
     }),
-    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, toasts, notify, dismissToast],
+    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, toasts, notify, dismissToast, loading],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Dumbbell,
   LayoutDashboard,
@@ -12,7 +11,9 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { db } from '../lib/db'
+import { useAuth } from '../context/AuthContext'
+import { UserMenu } from './auth/UserMenu'
+import { useEntries, useBodyWeights } from '../hooks/useSupabaseData'
 import { sumEntries, progressValue } from '../lib/calculations'
 import { formatKcal } from '../lib/format'
 import { todayISO } from '../lib/dates'
@@ -20,6 +21,7 @@ import { cn } from '../lib/cn'
 import { Logo } from './ui/Logo'
 import { ProgressBar } from './ui/ProgressBar'
 import { GOAL_LABELS } from '../types'
+
 
 const NAV_ITEMS = [
   { to: '/', label: 'Inicio', mobileLabel: 'Inicio', icon: LayoutDashboard, end: true },
@@ -94,8 +96,10 @@ function ThemeToggle({ full = false }: { full?: boolean }) {
 function SidebarLiveSummary() {
   const { settings } = useApp()
   const today = todayISO()
-  const entries = useLiveQuery(() => db.entries.where('date').equals(today).toArray(), [today]) ?? []
-  const latestWeight = useLiveQuery(() => db.bodyWeights.orderBy('date').last(), [])
+  const { data: entriesData } = useEntries(today)
+  const { data: bodyWeightsData } = useBodyWeights()
+  const entries = entriesData ?? []
+  const latestWeight = bodyWeightsData && bodyWeightsData.length > 0 ? bodyWeightsData[bodyWeightsData.length - 1] : undefined
   const totals = sumEntries(entries)
   const progress = progressValue(totals.calories, settings?.targets.calories ?? 0)
 
@@ -141,6 +145,7 @@ function SidebarLiveSummary() {
 
 export function Layout() {
   const { settings } = useApp()
+  const { user } = useAuth()
   const online = useOnlineStatus()
 
   return (
@@ -156,6 +161,12 @@ export function Layout() {
         <div className="px-1">
           <Logo />
         </div>
+
+        {user ? (
+          <div className="mt-4">
+            <UserMenu />
+          </div>
+        ) : null}
 
         {settings ? (
           <div className="mt-4 rounded-xl border border-line bg-raised/40 px-3 py-2">
@@ -208,7 +219,9 @@ export function Layout() {
             <Settings className="h-4 w-4" />
             Ajustes y perfil
           </NavLink>
-          <p className="px-1 text-[9px] uppercase tracking-[0.18em] text-faint">GymProgress · Datos locales</p>
+          <p className="px-1 text-[9px] uppercase tracking-[0.18em] text-faint">
+            {user ? 'GymProgress · Supabase' : 'GymProgress · Sin sesión'}
+          </p>
         </div>
       </aside>
 
@@ -222,6 +235,9 @@ export function Layout() {
                   <WifiOff className="h-3 w-3" /> Sin conexión
                 </span>
               ) : null}
+              {user && (
+                <UserMenu compact />
+              )}
               <ThemeToggle />
             </div>
           </div>

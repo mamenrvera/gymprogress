@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ArrowRight,
   CalendarCheck,
@@ -15,7 +14,6 @@ import {
 } from 'lucide-react'
 import type { MealType, Workout } from '../types'
 import { MEAL_LABELS, MEAL_TYPES } from '../types'
-import { db } from '../lib/db'
 import { useApp } from '../context/AppContext'
 import { PageHeader } from '../components/ui/PageHeader'
 import { DateNavigator } from '../components/ui/DateNavigator'
@@ -30,6 +28,7 @@ import { formatDuration, greetingForHour, isToday, minutesBetween, capitalize, f
 import { formatGrams, formatKcal, formatKg, formatNumber, formatPercent, formatSigned } from '../lib/format'
 import { setWorkoutStatus } from '../lib/repositories'
 import { cn } from '../lib/cn'
+import { useEntries, useWorkouts, useWorkoutExercises, useSets, useBodyWeights } from '../hooks/useSupabaseData'
 
 const STATUS_LABEL: Record<Workout['status'], string> = {
   planned: 'Planificada',
@@ -51,38 +50,43 @@ export function HomePage() {
   const [weightOpen, setWeightOpen] = useState(false)
   const [starting, setStarting] = useState(false)
 
-  const entries = useLiveQuery(() => db.entries.where('date').equals(selectedDate).toArray(), [selectedDate]) ?? []
-  const workouts = useLiveQuery(() => db.workouts.where('date').equals(selectedDate).toArray(), [selectedDate]) ?? []
-  const workoutIds = useMemo(() => workouts.map((workout) => workout.id), [workouts])
-  const workoutIdsKey = workoutIds.join('|')
-  const workoutExercises =
-    useLiveQuery(
-      async () => {
-        if (workoutIds.length === 0) return []
-        return db.workoutExercises.where('workoutId').anyOf(workoutIds).toArray()
-      },
-      [workoutIdsKey],
-    ) ?? []
-  const sets =
-    useLiveQuery(async () => {
-      if (workoutIds.length === 0) return []
-      return db.sets.where('workoutId').anyOf(workoutIds).toArray()
-    }, [workoutIdsKey]) ?? []
-  const bodyWeights = useLiveQuery(() => db.bodyWeights.toArray(), []) ?? []
+  // Supabase data hooks
+  const { data: entries, loading: entriesLoading } = useEntries(selectedDate)
+  const { data: workouts, loading: workoutsLoading } = useWorkouts(selectedDate)
+  const { data: bodyWeights } = useBodyWeights()
 
-  const totals = useMemo(() => sumEntries(entries), [entries])
+  const allEntries = entries ?? []
+  const allWorkouts = workouts ?? []
+  const allBodyWeights = bodyWeights ?? []
+
+  // Derive workout exercises and sets from workouts
+  const workoutIds = useMemo(() => allWorkouts.map(w => w.id), [allWorkouts])
+  const { data: allWorkoutExercises } = useWorkoutExercises()
+  const { data: allSets } = useSets()
+
+  const workoutExercises = useMemo(() => {
+    if (!allWorkoutExercises) return []
+    return allWorkoutExercises.filter(we => workoutIds.includes(we.workoutId))
+  }, [allWorkoutExercises, workoutIds])
+
+  const sets = useMemo(() => {
+    if (!allSets) return []
+    return allSets.filter(s => workoutIds.includes(s.workoutId))
+  }, [allSets, workoutIds])
+
+  const totals = useMemo(() => sumEntries(allEntries), [allEntries])
   const calories = progressValue(totals.calories, settings?.targets.calories ?? 0)
-  const weightSummary = useMemo(() => bodyWeightSummary(bodyWeights), [bodyWeights])
+  const weightSummary = useMemo(() => bodyWeightSummary(allBodyWeights), [allBodyWeights])
   const latestWeight = weightSummary.latest
   const weightDelta =
-    bodyWeights.length >= 2 && latestWeight
-      ? latestWeight.weightKg - bodyWeights.slice().sort((a, b) => a.date.localeCompare(b.date))[0].weightKg
+    allBodyWeights.length >= 2 && latestWeight
+      ? latestWeight.weightKg - allBodyWeights.slice().sort((a, b) => a.date.localeCompare(b.date))[0].weightKg
       : 0
 
   const primaryWorkout = useMemo(() => {
     const order: Record<Workout['status'], number> = { in_progress: 0, planned: 1, completed: 2 }
-    return workouts.slice().sort((a, b) => order[a.status] - order[b.status] || b.updatedAt.localeCompare(a.updatedAt))[0]
-  }, [workouts])
+    return allWorkouts.slice().sort((a, b) => order[a.status] - order[b.status] || b.updatedAt.localeCompare(a.updatedAt))[0]
+  }, [allWorkouts])
 
   const primaryExercises = primaryWorkout
     ? workoutExercises.filter((exercise) => exercise.workoutId === primaryWorkout.id)
@@ -96,7 +100,7 @@ export function HomePage() {
 
   const meals = MEAL_TYPES.map((meal) => ({
     ...meal,
-    entries: entries.filter((entry) => entry.meal === meal.value),
+    entries: allEntries.filter((entry) => entry.meal === meal.value),
   })).map((meal) => ({ ...meal, totals: sumEntries(meal.entries) }))
 
   const visibleMeals = meals.filter((meal) => meal.entries.length > 0 || ['desayuno', 'almuerzo', 'comida', 'cena'].includes(meal.value))
@@ -118,7 +122,7 @@ export function HomePage() {
     }
   }
 
-  if (!settings) {
+  if (!settings || entriesLoading || workoutsLoading) {
     return (
       <div className="space-y-3">
         <div className="skeleton h-12 w-56" />
@@ -150,7 +154,7 @@ export function HomePage() {
 
       <DateNavigator />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="relative overflow-hidden rounded-2xl border border-lime-500/20 bg-gradient-to-br from-surface via-surface to-lime-400/[0.045] p-5 shadow-card sm:p-6">
           <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-lime-400/10 blur-3xl" />
           <div className="relative">
@@ -228,7 +232,7 @@ export function HomePage() {
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-semibold text-fg">{primaryWorkout.name}</h2>
                   <p className="mt-0.5 text-[10px] text-faint">
-                    {workouts.length > 1 ? `${workouts.length} sesiones este día · ` : ''}
+                    {allWorkouts.length > 1 ? `${allWorkouts.length} sesiones este día · ` : ''}
                     {primaryWorkout.status === 'completed'
                       ? primaryDuration > 0
                         ? `Duración ${formatDuration(primaryDuration)}`
@@ -308,7 +312,7 @@ export function HomePage() {
 
       <MacroEnergyNotice targets={settings.targets} compact className="hidden sm:flex" />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
             <div>
@@ -374,7 +378,7 @@ export function HomePage() {
                   </p>
                   <p className="mt-1 text-[10px] text-faint">Último registro: {latestWeight.date}</p>
                 </div>
-                {bodyWeights.length >= 2 ? (
+                {allBodyWeights.length >= 2 ? (
                   <span
                     className={cn(
                       'chip',

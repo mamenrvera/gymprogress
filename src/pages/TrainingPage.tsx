@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   CalendarDays,
   ChevronRight,
@@ -14,7 +13,6 @@ import {
 } from 'lucide-react'
 import type { Exercise, MuscleGroup, Workout } from '../types'
 import { MUSCLE_GROUPS, MUSCLE_LABELS } from '../types'
-import { db } from '../lib/db'
 import { useApp } from '../context/AppContext'
 import { PageHeader } from '../components/ui/PageHeader'
 import { DateNavigator } from '../components/ui/DateNavigator'
@@ -39,6 +37,7 @@ import { formatNumber } from '../lib/format'
 import { deleteExercise } from '../lib/repositories'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
 import { cn } from '../lib/cn'
+import { useWorkouts, useWorkoutExercises, useSets, useExercises } from '../hooks/useSupabaseData'
 
 function normalize(text: string): string {
   return text
@@ -49,14 +48,18 @@ function normalize(text: string): string {
 
 export function TrainingPage() {
   const { selectedDate, settings, notify } = useApp()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'ejercicios' ? 'ejercicios' : 'sesiones'
 
-  const workouts = useLiveQuery(() => db.workouts.orderBy('date').reverse().toArray(), []) ?? []
-  const workoutExercises = useLiveQuery(() => db.workoutExercises.toArray(), []) ?? []
-  const sets = useLiveQuery(() => db.sets.toArray(), []) ?? []
-  const exercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), []) ?? []
+  const { data: workoutsData, loading: workoutsLoading } = useWorkouts()
+  const { data: workoutExercisesData } = useWorkoutExercises()
+  const { data: setsData } = useSets()
+  const { data: exercisesData } = useExercises()
+
+  const workouts = workoutsData ?? []
+  const workoutExercises = workoutExercisesData ?? []
+  const sets = setsData ?? []
+  const exercises = exercisesData ?? []
 
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
   const [exerciseModalOpen, setExerciseModalOpen] = useState(false)
@@ -182,7 +185,7 @@ export function TrainingPage() {
           </span>
           {stats.pendingSets > 0 ? <span className="text-amber-400">{stats.pendingSets} pendientes</span> : null}
         </div>
-        {workout.notes ? <p className="mt-2 line-clamp-2 text-[11px] text-faint">{workout.notes}</p> : null}
+        {workout.notes ? <p className="mt-2 line-clamp-2 text-[11px] text-muted">{workout.notes}</p> : null}
         <Link
           to={`/entrenamiento/sesion/${workout.id}`}
           className="mt-3 flex items-center justify-center gap-1 rounded-lg border border-line py-2 text-[11px] font-medium text-muted transition hover:border-lime-500/40 hover:text-accent"
@@ -193,7 +196,7 @@ export function TrainingPage() {
     )
   }
 
-  if (!settings) {
+  if (!settings || workoutsLoading) {
     return (
       <div className="space-y-3">
         <div className="skeleton h-12 w-60" />
@@ -490,9 +493,8 @@ export function TrainingPage() {
         open={workoutModalOpen}
         onClose={() => setWorkoutModalOpen(false)}
         defaultDate={selectedDate}
-        onSaved={(workout) => {
-          setWorkoutModalOpen(false)
-          navigate(`/entrenamiento/sesion/${workout.id}`)
+        onSaved={() => {
+          // Refresh data after creating a workout
         }}
       />
       <ExerciseFormModal
@@ -501,6 +503,9 @@ export function TrainingPage() {
         onClose={() => {
           setExerciseModalOpen(false)
           setEditingExercise(undefined)
+        }}
+        onSaved={() => {
+          // Refresh data after creating/editing exercise
         }}
       />
       <ConfirmDialog

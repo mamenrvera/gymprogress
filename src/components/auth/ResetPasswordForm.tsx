@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../ui/Button'
 import { cn } from '../../lib/cn'
+import { getSupabaseClient } from '../../lib/supabase'
 
 const resetSchema = z.object({
   password: z.string().min(8, 'Mínimo 8 caracteres'),
@@ -18,22 +19,17 @@ const resetSchema = z.object({
 
 type ResetFormValues = z.infer<typeof resetSchema>
 
+type FormState = 'loading' | 'form' | 'success' | 'error'
+
 export function ResetPasswordForm() {
-  const { updatePassword, error: authError, status, isPasswordRecovery } = useAuth()
+  const { updatePassword, error: authError } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
-  const [step, setStep] = useState<'form' | 'success'>('form')
+  const [step, setStep] = useState<FormState>('loading')
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  // Con PKCE, Supabase procesa el código automáticamente y establece la sesión.
-  // El formulario es válido si estamos en modo recuperación O si hay un código/token en la URL.
-  const hasRecoveryIndicator =
-    isPasswordRecovery ||
-    searchParams.has('code') ||
-    searchParams.has('access_token') ||
-    searchParams.has('token') ||
-    (typeof window !== 'undefined' && window.location.hash.includes('access_token'))
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const processedRef = useRef(false)
 
   const {
     register,
@@ -47,6 +43,103 @@ export function ResetPasswordForm() {
 
   const password = watch('password')
 
+  // Establecer la sesión de recuperación antes de mostrar el formulario
+  useEffect(() => {
+    if (processedRef.current) return
+    processedRef.current = true
+
+    const supabase = getSupabaseClient()
+
+    async function establishSession() {
+      try {
+        // 1. Comprobar si ya existe una sesión (detectSessionInUrl pudo haberla establecido)
+        const { data: { session: existingSession } } = await supabase.auth.getSession()
+        if (existingSession) {
+          setStep('form')
+          return
+        }
+
+        // 2. Recoger parámetros de la URL
+        const code = searchParams.get('code')
+        const tokenHash = searchParams.get('token_hash')
+        const type = searchParams.get('type')
+
+        // Hash params (flujo implícito)
+        const hashParams = new URLSearchParams(
+          typeof window !== 'undefined' ? window.location.hash.substring(1) : ''
+        )
+        const accessToken = hashParams.get('access_token')
+
+        // 3a. Flujo PKCE: intercambiar código por sesión
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) {
+            console.error('[ResetPassword] Error exchanging code:', error)
+            setErrorMessage(
+              'El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.'
+            )
+            setStep('error')
+            return
+          }
+          if (data.session) {
+            setStep('form')
+          } else {
+            setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
+            setStep('error')
+          }
+          return
+        }
+
+        // 3b. Flujo token_hash + type=recovery
+        if (tokenHash && type === 'recovery') {
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: 'recovery',
+          })
+          if (error) {
+            console.error('[ResetPassword] Error verifying OTP:', error)
+            setErrorMessage(
+              'El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.'
+            )
+            setStep('error')
+            return
+          }
+          if (data.session) {
+            setStep('form')
+          } else {
+            setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
+            setStep('error')
+          }
+          return
+        }
+
+        // 3c. Flujo implícito: esperar a que detectSessionInUrl procese el hash
+        if (accessToken) {
+          // Dar tiempo a Supabase para procesar el hash
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            setStep('form')
+          } else {
+            setErrorMessage('El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.')
+            setStep('error')
+          }
+          return
+        }
+
+        // 4. No se encontraron parámetros de recuperación
+        setErrorMessage('Enlace de recuperación no válido. Solicita uno nuevo desde la página de recuperación.')
+        setStep('error')
+      } catch (e) {
+        console.error('[ResetPassword] Unexpected error:', e)
+        setErrorMessage('Error al procesar el enlace de recuperación. Intenta de nuevo.')
+        setStep('error')
+      }
+    }
+
+    establishSession()
+  }, [searchParams])
+
   const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
     if (!pwd) return { label: '', color: 'bg-line', width: '0%' }
     let score = 0
@@ -55,7 +148,7 @@ export function ResetPasswordForm() {
     if (/[a-z]/.test(pwd)) score++
     if (/[0-9]/.test(pwd)) score++
     if (/[^A-Za-z0-9]/.test(pwd)) score++
-    
+
     if (score <= 2) return { label: 'Débil', color: 'bg-rose-500', width: '33%' }
     if (score <= 3) return { label: 'Media', color: 'bg-amber-500', width: '66%' }
     return { label: 'Fuerte', color: 'bg-lime-500', width: '100%' }
@@ -65,17 +158,50 @@ export function ResetPasswordForm() {
 
   const onSubmit = handleSubmit(async (values) => {
     setIsSubmitting(true)
+    setErrorMessage(null)
     try {
+      // Verificar que existe una sesión antes de actualizar
+      const supabase = getSupabaseClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorMessage('La sesión de recuperación no está activa. Solicita un nuevo enlace.')
+        setStep('error')
+        return
+      }
+
       await updatePassword(values.password)
       setStep('success')
-    } catch {
-      // Error manejado en updatePassword
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudo actualizar la contraseña'
+      // Mensaje más claro para el error de sesión faltante
+      if (msg.includes('Auth session missing') || msg.includes('session missing')) {
+        setErrorMessage('La sesión de recuperación ha expirado. Solicita un nuevo enlace.')
+        setStep('error')
+      } else {
+        setErrorMessage(msg)
+      }
     } finally {
       setIsSubmitting(false)
     }
   })
 
-  if (!hasRecoveryIndicator && step === 'form') {
+  // Estado: cargando sesión
+  if (step === 'loading') {
+    return (
+      <div className="text-center py-8">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-lime-400/10">
+          <span className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        </div>
+        <h2 className="font-display text-xl font-semibold text-fg">Verificando enlace…</h2>
+        <p className="mt-2 text-sm text-muted">
+          Estamos validando tu enlace de recuperación.
+        </p>
+      </div>
+    )
+  }
+
+  // Estado: error
+  if (step === 'error') {
     return (
       <div className="text-center py-8">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10">
@@ -83,8 +209,7 @@ export function ResetPasswordForm() {
         </div>
         <h2 className="font-display text-xl font-semibold text-fg">Enlace inválido o expirado</h2>
         <p className="mt-2 text-sm text-muted">
-          Este enlace de recuperación no es válido o ha expirado.
-          Solicita uno nuevo desde la página de recuperación.
+          {errorMessage || 'Este enlace de recuperación no es válido o ha expirado.'}
         </p>
         <Button variant="secondary" className="mt-6" onClick={() => navigate('/recuperar')}>
           Solicitar nuevo enlace
@@ -93,6 +218,7 @@ export function ResetPasswordForm() {
     )
   }
 
+  // Estado: éxito
   if (step === 'success') {
     return (
       <div className="text-center py-8">
@@ -112,11 +238,17 @@ export function ResetPasswordForm() {
     )
   }
 
+  // Estado: formulario
   return (
     <form onSubmit={onSubmit} className="space-y-4" noValidate>
       {authError && (
         <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-400">
           {authError}
+        </div>
+      )}
+      {errorMessage && (
+        <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-400">
+          {errorMessage}
         </div>
       )}
 
@@ -139,7 +271,7 @@ export function ResetPasswordForm() {
             autoComplete="new-password"
             placeholder="Mínimo 8 caracteres"
             className={cn('input pl-9 pr-10', errors.password && 'input-error')}
-            disabled={isSubmitting || status === 'loading'}
+            disabled={isSubmitting}
             {...register('password')}
           />
           <button
@@ -152,7 +284,7 @@ export function ResetPasswordForm() {
           </button>
         </div>
         {errors.password && <p className="field-error">{errors.password.message}</p>}
-        
+
         {password && (
           <div className="mt-2">
             <div className="flex items-center justify-between text-xs mb-1">
@@ -181,14 +313,14 @@ export function ResetPasswordForm() {
             autoComplete="new-password"
             placeholder="Repite la contraseña"
             className={cn('input pl-9', errors.confirmPassword && 'input-error')}
-            disabled={isSubmitting || status === 'loading'}
+            disabled={isSubmitting}
             {...register('confirmPassword')}
           />
         </div>
         {errors.confirmPassword && <p className="field-error">{errors.confirmPassword.message}</p>}
       </div>
 
-      <Button type="submit" className="w-full" loading={isSubmitting || status === 'loading'} disabled={status === 'loading'}>
+      <Button type="submit" className="w-full" loading={isSubmitting} disabled={isSubmitting}>
         <span className="flex items-center justify-center gap-2">
           Actualizar contraseña
           <ArrowRight className="h-4 w-4" />

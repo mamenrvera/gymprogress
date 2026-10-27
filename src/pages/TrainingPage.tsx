@@ -14,6 +14,7 @@ import {
 import type { Exercise, MuscleGroup, Workout } from '../types'
 import { MUSCLE_GROUPS, MUSCLE_LABELS } from '../types'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { PageHeader } from '../components/ui/PageHeader'
 import { DateNavigator } from '../components/ui/DateNavigator'
 import { Button } from '../components/ui/Button'
@@ -49,6 +50,8 @@ function normalize(text: string): string {
 
 export function TrainingPage() {
   const { selectedDate, settings, notify } = useApp()
+  const { user } = useAuth()
+  const isAdmin = user?.email === 'mamenromerovera@gmail.com'
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'ejercicios' ? 'ejercicios' : 'sesiones'
 
@@ -153,8 +156,9 @@ export function TrainingPage() {
       await deleteExercise(deletingExercise.id)
       notify('Ejercicio eliminado de la biblioteca. Su historial se conserva.')
       setDeletingExercise(undefined)
-    } catch {
-      notify('No se pudo eliminar el ejercicio', 'error')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudo eliminar el ejercicio'
+      notify(msg, 'error')
     }
   }
 
@@ -470,14 +474,16 @@ export function TrainingPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingExercise(exercise)}
-                          className="btn-icon h-8 w-8 hover:text-rose-400"
-                          aria-label={`Eliminar ${exercise.name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingExercise(exercise)}
+                            className="btn-icon h-8 w-8 hover:text-rose-400"
+                            aria-label={`Eliminar ${exercise.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </article>

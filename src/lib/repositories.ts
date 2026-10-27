@@ -229,7 +229,31 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
 export async function deleteExercise(id: string): Promise<void> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
-  await deleteExerciseFromSupabase(id, userId)
+
+  // Fetch the exercise to get its image_url before deleting
+  // (cualquier usuario autenticado puede leer ejercicios del catálogo compartido)
+  const client = (await import('./supabase')).getSupabaseClient()
+  const { data: existing } = await client
+    .from('exercises')
+    .select('image_url')
+    .eq('id', id)
+    .single()
+
+  // Delete the photo from storage if it exists
+  // (solo el propietario de la foto puede eliminarla - RLS en storage)
+  if (existing?.image_url) {
+    try {
+      const { deleteExercisePhoto } = await import('./storage')
+      await deleteExercisePhoto(existing.image_url as string)
+    } catch (e) {
+      console.error('[Repo] Error deleting exercise photo:', e)
+    }
+  }
+
+  const deleted = await deleteExerciseFromSupabase(id)
+  if (!deleted) {
+    throw new Error('No tienes permiso para eliminar este ejercicio. Solo el administrador puede hacerlo.')
+  }
 }
 
 // ——— Sesiones de entrenamiento ———

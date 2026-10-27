@@ -26,7 +26,9 @@ export function useExercisePhotoUrl(imagePath: string | undefined): string | nul
     // Otherwise, it's a storage path - generate signed URL
     let cancelled = false
     getCachedSignedUrl(imagePath).then((signedUrl) => {
-      if (!cancelled) setUrl(signedUrl)
+      if (!cancelled) {
+        setUrl(signedUrl)
+      }
     })
     return () => { cancelled = true }
   }, [imagePath])

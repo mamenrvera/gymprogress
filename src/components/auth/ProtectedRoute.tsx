@@ -34,7 +34,14 @@ export function ProtectedRoute() {
 }
 
 export function PublicOnlyRoute() {
-  const { status } = useAuth()
+  const { status, isPasswordRecovery } = useAuth()
+  const location = useLocation()
+
+  // Permitir acceso a /reset-password durante el flujo de recuperación
+  // aunque el usuario esté autenticado (sesión de recuperación)
+  if (location.pathname === '/reset-password' && isPasswordRecovery) {
+    return <Outlet />
+  }
 
   if (status === 'loading') {
     return (

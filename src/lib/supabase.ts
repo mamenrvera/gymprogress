@@ -99,9 +99,20 @@ export async function signOut(): Promise<AuthError | null> {
   return error
 }
 
+export function getAppUrl(): string {
+  // Configuración clara por entorno: no construir URLs a partir del dominio
+  if (import.meta.env.VITE_APP_URL) {
+    return import.meta.env.VITE_APP_URL
+  }
+  return import.meta.env.PROD
+    ? 'https://gymprogress-seven.vercel.app'
+    : 'http://localhost:5173'
+}
+
 export async function resetPassword(email: string): Promise<AuthError | null> {
+  const appUrl = getAppUrl()
   const { error } = await getSupabaseClient().auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
+    redirectTo: `${appUrl}/reset-password`,
   })
   return error
 }

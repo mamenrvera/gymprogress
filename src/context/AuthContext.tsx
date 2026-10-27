@@ -20,6 +20,7 @@ export interface AuthContextValue {
   targets: Targets | null
   status: AuthStatus
   error: string | null
+  isPasswordRecovery: boolean
 
   // Acciones de autenticación
   signUp: (email: string, password: string) => Promise<void>
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [targets, setTargets] = useState<Targets | null>(null)
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [error, setError] = useState<string | null>(null)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   // AuthContext is independent of AppContext to avoid circular dependency
   // Theme is applied directly; notifications are logged to console
 
@@ -87,13 +89,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async function initializeAuth() {
       try {
         const { data: { session: initialSession } } = await supabase.auth.getSession()
-        
+
         if (!mounted) return
+
+        // Detectar si estamos en flujo de recuperación de contraseña
+        const isRecoveryUrl = typeof window !== 'undefined' &&
+          window.location.pathname === '/reset-password' &&
+          (window.location.search.includes('code=') || window.location.hash.includes('access_token'))
 
         if (initialSession?.user) {
           setSession(initialSession)
           setUser(initialSession.user)
           setStatus('authenticated')
+          if (isRecoveryUrl) {
+            setIsPasswordRecovery(true)
+          }
           await loadUserData(initialSession.user.id)
         } else {
           setStatus('unauthenticated')
@@ -115,6 +125,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       console.log('[Auth] Auth state change:', event, newSession?.user?.id)
 
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+      }
+
       if (newSession?.user) {
         setSession(newSession)
         setUser(newSession.user)
@@ -126,6 +140,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setProfile(null)
         setTargets(null)
         setStatus('unauthenticated')
+        // Solo limpiar isPasswordRecovery si no hay sesión y no estamos en la página de reset
+        if (typeof window !== 'undefined' && window.location.pathname !== '/reset-password') {
+          setIsPasswordRecovery(false)
+        }
       }
     })
 
@@ -187,8 +205,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const resetPassword = useCallback(async (email: string) => {
     setError(null)
     try {
+      // Importar getAppUrl dinámicamente para evitar dependencia circular
+      const { getAppUrl } = await import('../lib/supabase')
+      const appUrl = getAppUrl()
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${appUrl}/reset-password`,
       })
       if (error) throw error
       console.log('[Auth] Se ha enviado un enlace de recuperación a tu correo')
@@ -205,6 +226,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) throw error
+      setIsPasswordRecovery(false)
       console.log('[Auth] Contraseña actualizada')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al actualizar contraseña'
@@ -265,6 +287,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     targets,
     status,
     error,
+    isPasswordRecovery,
     signUp,
     signIn,
     signOut,
@@ -275,7 +298,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     refreshSession,
     clearError,
   }), [
-    user, session, profile, targets, status, error,
+    user, session, profile, targets, status, error, isPasswordRecovery,
     signUp, signIn, signOut, resetPassword, updatePassword,
     updateProfile, updateTargets, refreshSession, clearError,
   ])

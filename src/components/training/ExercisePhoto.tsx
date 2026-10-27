@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Dumbbell } from 'lucide-react'
 import { useExercisePhotoUrl } from '../../hooks/useExercisePhoto'
 import { cn } from '../../lib/cn'
@@ -25,6 +26,20 @@ const iconSizes = {
 
 export function ExercisePhoto({ imagePath, alt, size = 'md', className }: ExercisePhotoProps) {
   const url = useExercisePhotoUrl(imagePath)
+  const [failed, setFailed] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+    setTimedOut(false)
+    if (!imagePath) return
+    const timer = setTimeout(() => setTimedOut(true), 5000)
+    return () => clearTimeout(timer)
+  }, [imagePath])
+
+  useEffect(() => {
+    if (url) setTimedOut(false)
+  }, [url])
 
   if (!imagePath) {
     return (
@@ -35,9 +50,14 @@ export function ExercisePhoto({ imagePath, alt, size = 'md', className }: Exerci
   }
 
   if (!url) {
+    // Still loading or failed to generate signed URL
     return (
       <div className={cn('flex shrink-0 items-center justify-center rounded-xl bg-raised text-faint', sizeClasses[size], className)}>
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        {failed || timedOut ? (
+          <Dumbbell className={iconSizes[size]} />
+        ) : (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        )}
       </div>
     )
   }
@@ -47,6 +67,7 @@ export function ExercisePhoto({ imagePath, alt, size = 'md', className }: Exerci
       src={url}
       alt={alt}
       className={cn('shrink-0 rounded-xl object-cover', sizeClasses[size], className)}
+      onError={() => setFailed(true)}
     />
   )
 }

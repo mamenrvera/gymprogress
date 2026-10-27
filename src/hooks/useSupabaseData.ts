@@ -96,7 +96,7 @@ export function useExercises(): UseQueryResult<Exercise[]> {
   const fetcher = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return []
-    return fetchExercisesFromSupabase(user.id)
+    return fetchExercisesFromSupabase()
   }, [])
   return useSupabaseQuery(fetcher, [])
 }

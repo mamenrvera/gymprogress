@@ -19,15 +19,21 @@ const resetSchema = z.object({
 type ResetFormValues = z.infer<typeof resetSchema>
 
 export function ResetPasswordForm() {
-  const { updatePassword, error: authError, status } = useAuth()
+  const { updatePassword, error: authError, status, isPasswordRecovery } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
   const [step, setStep] = useState<'form' | 'success'>('form')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Verificar que hay token en la URL (Supabase lo pasa como hash o query param)
-  const hasToken = searchParams.has('access_token') || searchParams.has('token')
+  // Con PKCE, Supabase procesa el código automáticamente y establece la sesión.
+  // El formulario es válido si estamos en modo recuperación O si hay un código/token en la URL.
+  const hasRecoveryIndicator =
+    isPasswordRecovery ||
+    searchParams.has('code') ||
+    searchParams.has('access_token') ||
+    searchParams.has('token') ||
+    (typeof window !== 'undefined' && window.location.hash.includes('access_token'))
 
   const {
     register,
@@ -69,7 +75,7 @@ export function ResetPasswordForm() {
     }
   })
 
-  if (!hasToken && step === 'form') {
+  if (!hasRecoveryIndicator && step === 'form') {
     return (
       <div className="text-center py-8">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10">

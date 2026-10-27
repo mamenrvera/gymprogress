@@ -152,11 +152,11 @@ export async function deleteEntryFromSupabase(id: string, userId: string): Promi
 // ============================================================
 // EXERCISES
 // ============================================================
-export async function fetchExercisesFromSupabase(userId: string): Promise<Exercise[]> {
+export async function fetchExercisesFromSupabase(): Promise<Exercise[]> {
+  // Fetch ALL exercises (shared catalog) - RLS allows all authenticated users to read
   const { data, error } = await supabase
     .from('exercises')
     .select('*')
-    .eq('user_id', userId)
     .order('name')
   if (error) throw error
   return (data || []).map((row: Record<string, unknown>) => ({
@@ -188,13 +188,16 @@ export async function upsertExerciseToSupabase(exercise: Exercise, userId: strin
   if (error) throw error
 }
 
-export async function deleteExerciseFromSupabase(id: string, userId: string): Promise<void> {
-  const { error } = await supabase
+export async function deleteExerciseFromSupabase(id: string): Promise<boolean> {
+  // No filtrar por user_id: la política RLS (admin-only) controla el acceso.
+  // Usar .select() para obtener las filas eliminadas y verificar éxito.
+  const { data, error } = await supabase
     .from('exercises')
     .delete()
     .eq('id', id)
-    .eq('user_id', userId)
+    .select()
   if (error) throw error
+  return (data || []).length > 0
 }
 
 // ============================================================

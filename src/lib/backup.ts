@@ -10,7 +10,7 @@ export async function createBackup(): Promise<Record<string, unknown>> {
     fetchSettingsFromSupabase(userId),
     fetchFoodsFromSupabase(userId),
     fetchEntriesFromSupabase(userId),
-    fetchExercisesFromSupabase(userId),
+    fetchExercisesFromSupabase(),
     fetchWorkoutsFromSupabase(userId),
     fetchWorkoutExercisesFromSupabase(userId),
     fetchSetsFromSupabase(userId),

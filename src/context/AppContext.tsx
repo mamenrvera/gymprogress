@@ -31,6 +31,7 @@ interface AppContextValue {
   theme: ThemeMode
   changeTheme: (theme: ThemeMode) => Promise<void>
   toggleTheme: () => Promise<void>
+  updateSettings: (values: import('../lib/validators').SettingsFormValues) => Promise<void>
   toasts: Toast[]
   notify: (message: string, kind?: ToastKind) => void
   dismissToast: (id: number) => void
@@ -151,6 +152,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [user, settings, notify],
   )
 
+  const updateSettings = useCallback(
+    async (values: import('../lib/validators').SettingsFormValues) => {
+      if (!user) throw new Error('No hay sesión activa')
+      try {
+        const { saveSettings } = await import('../lib/repositories')
+        const updated = await saveSettings(values)
+        setSettings(updated)
+        notify('Ajustes guardados')
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'No se pudieron guardar los ajustes'
+        notify(msg, 'error')
+        throw error
+      }
+    },
+    [user, notify],
+  )
+
   const toggleTheme = useCallback(async () => {
     await changeTheme(theme === 'dark' ? 'light' : 'dark')
   }, [changeTheme, theme])
@@ -166,12 +184,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       changeTheme,
       toggleTheme,
+      updateSettings,
       toasts,
       notify,
       dismissToast,
       loading,
     }),
-    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, toasts, notify, dismissToast, loading],
+    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, updateSettings, toasts, notify, dismissToast, loading],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

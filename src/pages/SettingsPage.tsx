@@ -20,7 +20,6 @@ import {
 } from 'lucide-react'
 import { GOALS } from '../types'
 import { settingsSchema, type SettingsFormValues } from '../lib/validators'
-import { saveSettings } from '../lib/repositories'
 import { clearHistory, downloadBackup, getStorageInfo, importBackupFile, resetApplication } from '../lib/backup'
 import { kcalFromMacros } from '../lib/calculations'
 import { useApp } from '../context/AppContext'
@@ -61,7 +60,7 @@ function formatBytes(value?: number): string {
 }
 
 export function SettingsPage() {
-  const { settings, theme, changeTheme, notify } = useApp()
+  const { settings, theme, changeTheme, notify, updateSettings } = useApp()
   const [pendingImport, setPendingImport] = useState<File | undefined>(undefined)
   const [confirmClearHistory, setConfirmClearHistory] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -147,8 +146,7 @@ export function SettingsPage() {
 
   const onSubmit = handleSubmit(async (formValues) => {
     try {
-      await saveSettings(formValues)
-      notify('Ajustes guardados')
+      await updateSettings(formValues)
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudieron guardar los ajustes', 'error')
     }

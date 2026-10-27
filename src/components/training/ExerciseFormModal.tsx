@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Dumbbell, Plus } from 'lucide-react'
@@ -7,9 +7,11 @@ import { MUSCLE_GROUPS } from '../../types'
 import { exerciseSchema, type ExerciseFormValues } from '../../lib/validators'
 import { saveExercise } from '../../lib/repositories'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 import { cn } from '../../lib/cn'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
+import { ExercisePhotoUpload } from './ExercisePhotoUpload'
 
 interface ExerciseFormModalProps {
   open: boolean
@@ -20,6 +22,9 @@ interface ExerciseFormModalProps {
 
 export function ExerciseFormModal({ open, exercise, onClose, onSaved }: ExerciseFormModalProps) {
   const { notify } = useApp()
+  const [imageUrl, setImageUrl] = useState<string | null>(exercise?.imageUrl ?? null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const { user } = useAuth()
   const {
     register,
     handleSubmit,
@@ -37,6 +42,7 @@ export function ExerciseFormModal({ open, exercise, onClose, onSaved }: Exercise
 
   useEffect(() => {
     if (!open) return
+    setImageUrl(exercise?.imageUrl ?? null)
     reset({
       name: exercise?.name ?? '',
       muscleGroup: exercise?.muscleGroup ?? 'pecho',
@@ -47,10 +53,28 @@ export function ExerciseFormModal({ open, exercise, onClose, onSaved }: Exercise
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const saved = await saveExercise(values, exercise?.id)
-      notify(exercise ? 'Ejercicio actualizado' : 'Ejercicio añadido a tu biblioteca')
-      onSaved?.(saved)
-      onClose()
+      if (!exercise?.id && pendingFile && user) {
+        // New exercise with photo: create first, then upload photo
+        const saved = await saveExercise(values, undefined)
+        try {
+          const { compressImage, uploadExercisePhoto } = await import('../../lib/storage')
+          const compressed = await compressImage(pendingFile, 800, 0.8)
+          const compressedFile = new File([compressed], pendingFile.name, { type: compressed.type })
+          const result = await uploadExercisePhoto(user.id, saved.id, compressedFile)
+          await saveExercise(values, saved.id, result.path)
+          saved.imageUrl = result.path
+        } catch (e) {
+          notify(e instanceof Error ? e.message : 'Error al subir la imagen', 'error')
+        }
+        notify('Ejercicio añadido a tu biblioteca')
+        onSaved?.(saved)
+        onClose()
+      } else {
+        const saved = await saveExercise(values, exercise?.id, imageUrl)
+        notify(exercise ? 'Ejercicio actualizado' : 'Ejercicio añadido a tu biblioteca')
+        onSaved?.(saved)
+        onClose()
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudo guardar el ejercicio', 'error')
     }
@@ -119,6 +143,14 @@ export function ExerciseFormModal({ open, exercise, onClose, onSaved }: Exercise
           />
           {errors.notes ? <p className="field-error">{errors.notes.message}</p> : null}
         </div>
+
+        <ExercisePhotoUpload
+          exerciseId={exercise?.id}
+          currentImageUrl={imageUrl}
+          onImageChange={setImageUrl}
+          onFileSelect={setPendingFile}
+          disabled={isSubmitting}
+        />
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>

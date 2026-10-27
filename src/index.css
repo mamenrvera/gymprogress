@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Desactivar zoom táctil (pinch-to-zoom) en todos los navegadores */
+html, body {
+  touch-action: pan-x pan-y;
+}
+
 :root {
   --c-app: 7 9 13;
   --c-surface: 15 19 27;

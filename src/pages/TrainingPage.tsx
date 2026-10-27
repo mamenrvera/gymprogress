@@ -38,6 +38,7 @@ import { deleteExercise } from '../lib/repositories'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
 import { cn } from '../lib/cn'
 import { useWorkouts, useWorkoutExercises, useSets, useExercises } from '../hooks/useSupabaseData'
+import { ExercisePhoto } from '../components/training/ExercisePhoto'
 
 function normalize(text: string): string {
   return text
@@ -443,9 +444,7 @@ export function TrainingPage() {
                 return (
                   <article key={exercise.id} className="card flex flex-col p-4">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lime-400/10 text-accent">
-                        <Dumbbell className="h-4 w-4" />
-                      </div>
+                      <ExercisePhoto imagePath={exercise.imageUrl} alt={exercise.name} size="md" />
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate text-sm font-semibold text-fg">{exercise.name}</h3>
                         <p className="mt-0.5 text-[10px] text-faint">

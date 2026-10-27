@@ -33,7 +33,8 @@ import {
 } from '../lib/dates'
 import { formatNumber } from '../lib/format'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
-import { useWorkouts, useWorkoutExercises, useSets } from '../hooks/useSupabaseData'
+import { useWorkouts, useWorkoutExercises, useSets, useExercises } from '../hooks/useSupabaseData'
+import { ExercisePhoto } from '../components/training/ExercisePhoto'
 
 interface PreviousPerformance {
   date: string
@@ -54,6 +55,15 @@ export function WorkoutEditorPage() {
   const { data: workoutsData } = useWorkouts()
   const { data: workoutExercisesData, refetch: refetchWorkoutExercises } = useWorkoutExercises(id)
   const { data: setsData, refetch: refetchSets } = useSets(id)
+  const { data: exercisesData } = useExercises()
+
+  const exerciseImageMap = useMemo(() => {
+    const map = new Map<string, string | undefined>()
+    for (const ex of exercisesData ?? []) {
+      map.set(ex.id, ex.imageUrl)
+    }
+    return map
+  }, [exercisesData])
 
   const workout = useMemo(() => {
     if (!workoutsData || !id) return null
@@ -134,6 +144,12 @@ export function WorkoutEditorPage() {
 
   const handleAddExercise = async (exercise: Exercise) => {
     if (!workout) return
+    // Prevent duplicate exercises in the same workout
+    const alreadyAdded = workoutExercises.some((we) => we.exerciseId === exercise.id)
+    if (alreadyAdded) {
+      notify(`${exercise.name} ya está en esta sesión`, 'error')
+      return
+    }
     try {
       await addExerciseToWorkout(workout.id, {
         id: exercise.id,
@@ -404,6 +420,7 @@ export function WorkoutEditorPage() {
             return (
               <article key={exercise.id} className="card overflow-hidden">
                 <div className="flex items-start gap-2.5 border-b border-line px-3.5 py-3">
+                  <ExercisePhoto imagePath={exercise.exerciseId ? exerciseImageMap.get(exercise.exerciseId) : undefined} alt={exercise.exerciseName} size="picker" />
                   <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-raised font-display text-sm font-semibold text-muted">
                     {index + 1}
                   </span>
@@ -447,7 +464,7 @@ export function WorkoutEditorPage() {
                         set={set}
                         exerciseName={exercise.exerciseName}
                         onUpdate={(patch) => void updateSet(set.id, patch)}
-                        onDelete={() => void deleteSet(set.id)}
+                        onDelete={() => void deleteSet(set.id).then(() => refetchSets())}
                       />
                     ))}
                   </div>
@@ -491,6 +508,7 @@ export function WorkoutEditorPage() {
           setPickerOpen(false)
           setNewExerciseOpen(true)
         }}
+        existingExerciseIds={workoutExercises.map((we) => we.exerciseId).filter(Boolean) as string[]}
       />
       <ExerciseFormModal
         open={newExerciseOpen}

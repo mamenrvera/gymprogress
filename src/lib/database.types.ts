@@ -223,6 +223,7 @@ export interface Database {
           muscle_group: string
           equipment: string | null
           notes: string | null
+          image_url: string | null
           created_at: string
           updated_at: string
         }
@@ -233,6 +234,7 @@ export interface Database {
           muscle_group: string
           equipment?: string | null
           notes?: string | null
+          image_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -243,6 +245,7 @@ export interface Database {
           muscle_group?: string
           equipment?: string | null
           notes?: string | null
+          image_url?: string | null
           created_at?: string
           updated_at?: string
         }

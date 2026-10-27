@@ -153,6 +153,7 @@ export interface Exercise {
   muscleGroup: MuscleGroup
   equipment?: string
   notes?: string
+  imageUrl?: string
   createdAt: string
   updatedAt: string
 }

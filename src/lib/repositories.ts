@@ -175,21 +175,39 @@ export async function deleteFoodEntry(id: string): Promise<void> {
 }
 
 // ——— Ejercicios ———
-export async function saveExercise(values: ExerciseFormValues, existingId?: string): Promise<Exercise> {
+export async function saveExercise(values: ExerciseFormValues, existingId?: string, imageUrl?: string | null): Promise<Exercise> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
 
   const timestamp = nowISO()
   let exercise: Exercise
   if (existingId) {
+    // Fetch existing to preserve imageUrl if not changed
+    const { data: existing } = await (await import('./supabase')).getSupabaseClient()
+      .from('exercises')
+      .select('image_url, created_at')
+      .eq('id', existingId)
+      .eq('user_id', userId)
+      .single()
     exercise = {
       id: existingId,
       name: values.name,
       muscleGroup: values.muscleGroup as MuscleGroup,
       equipment: values.equipment,
       notes: values.notes,
-      createdAt: timestamp,
+      // null means "remove photo", undefined means "keep existing"
+      imageUrl: imageUrl === null ? undefined : (imageUrl !== undefined ? imageUrl : (existing?.image_url as string | undefined)),
+      createdAt: (existing?.created_at as string) ?? timestamp,
       updatedAt: timestamp,
+    }
+    // If removing photo, delete from storage
+    if (imageUrl === null && existing?.image_url) {
+      try {
+        const { deleteExercisePhoto } = await import('./storage')
+        await deleteExercisePhoto(existing.image_url as string)
+      } catch (e) {
+        console.error('[Repo] Error deleting old photo:', e)
+      }
     }
   } else {
     exercise = {
@@ -198,6 +216,7 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
       muscleGroup: values.muscleGroup as MuscleGroup,
       equipment: values.equipment,
       notes: values.notes,
+      imageUrl: imageUrl ?? undefined,
       createdAt: timestamp,
       updatedAt: timestamp,
     }
@@ -446,15 +465,17 @@ export async function deleteSet(id: string): Promise<void> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
 
+  const client = (await import('./supabase')).getSupabaseClient()
+
   // Verify ownership via workout
-  const { data: existing, error: fetchError } = await (await import('./supabase')).getSupabaseClient()
+  const { data: existing, error: fetchError } = await client
     .from('sets')
-    .select('workout_id')
+    .select('workout_id, workout_exercise_id')
     .eq('id', id)
     .single()
   if (fetchError || !existing) throw new Error('La serie no existe')
 
-  const { data: workout, error: wError } = await (await import('./supabase')).getSupabaseClient()
+  const { data: workout, error: wError } = await client
     .from('workouts')
     .select('id')
     .eq('id', existing.workout_id as string)
@@ -462,7 +483,35 @@ export async function deleteSet(id: string): Promise<void> {
     .single()
   if (wError || !workout) throw new Error('No autorizado')
 
+  const workoutExerciseId = existing.workout_exercise_id as string
+
+  // Delete the set
   await deleteSetFromSupabase(id)
+
+  // Renumber remaining sets for this exercise to be consecutive starting from 1
+  const { data: remainingSets, error: fetchRemainingError } = await client
+    .from('sets')
+    .select('id, set_number')
+    .eq('workout_exercise_id', workoutExerciseId)
+    .order('set_number', { ascending: true })
+
+  if (fetchRemainingError) {
+    console.error('[Repo] Error fetching remaining sets for renumbering:', fetchRemainingError)
+    return
+  }
+
+  if (remainingSets && remainingSets.length > 0) {
+    // Update each set's set_number to be consecutive
+    for (let i = 0; i < remainingSets.length; i++) {
+      const newSetNumber = i + 1
+      if (remainingSets[i].set_number !== newSetNumber) {
+        await client
+          .from('sets')
+          .update({ set_number: newSetNumber, updated_at: nowISO() })
+          .eq('id', remainingSets[i].id)
+      }
+    }
+  }
 }
 
 // ——— Peso corporal ———
@@ -503,10 +552,21 @@ export async function deleteBodyWeight(id: string): Promise<void> {
 }
 
 // ——— Ajustes ———
-export async function saveSettings(values: SettingsFormValues): Promise<void> {
+export async function saveSettings(values: SettingsFormValues): Promise<Settings> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
 
+  // Fetch current settings from Supabase to preserve theme and createdAt
+  const currentSettings = await (async () => {
+    try {
+      const { fetchSettingsFromSupabase } = await import('./supabase-data')
+      return await fetchSettingsFromSupabase(userId)
+    } catch {
+      return null
+    }
+  })()
+
+  const now = nowISO()
   const settings: Settings = {
     id: 'app',
     profile: {
@@ -523,12 +583,13 @@ export async function saveSettings(values: SettingsFormValues): Promise<void> {
       carbMin: values.carbMin,
       carbMax: values.carbMax,
     },
-    theme: 'dark',
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
+    theme: currentSettings?.theme ?? 'dark',
+    createdAt: currentSettings?.createdAt ?? now,
+    updatedAt: now,
   }
 
   await upsertSettingsToSupabase(settings, userId)
+  return settings
 }
 
 export async function setTheme(theme: ThemeMode): Promise<void> {

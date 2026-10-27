@@ -165,6 +165,7 @@ export async function fetchExercisesFromSupabase(userId: string): Promise<Exerci
     muscleGroup: row.muscle_group as MuscleGroup,
     equipment: row.equipment as string | undefined,
     notes: row.notes as string | undefined,
+    imageUrl: row.image_url as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }))
@@ -180,6 +181,7 @@ export async function upsertExerciseToSupabase(exercise: Exercise, userId: strin
       muscle_group: exercise.muscleGroup,
       equipment: exercise.equipment,
       notes: exercise.notes,
+      image_url: exercise.imageUrl,
       created_at: exercise.createdAt,
       updated_at: exercise.updatedAt,
     }, { onConflict: 'id' })

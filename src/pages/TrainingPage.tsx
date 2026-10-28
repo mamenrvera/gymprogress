@@ -463,17 +463,19 @@ export function TrainingPage() {
                         {usage > 0 ? `${usage} ${usage === 1 ? 'sesión' : 'sesiones'}` : 'Sin usar aún'}
                       </span>
                       <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingExercise(exercise)
-                            setExerciseModalOpen(true)
-                          }}
-                          className="btn-icon h-8 w-8"
-                          aria-label={`Editar ${exercise.name}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingExercise(exercise)
+                              setExerciseModalOpen(true)
+                            }}
+                            className="btn-icon h-8 w-8"
+                            aria-label={`Editar ${exercise.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         {isAdmin && (
                           <button
                             type="button"

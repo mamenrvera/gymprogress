@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Lock, Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { Lock, Eye, EyeOff, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../ui/Button'
@@ -19,17 +19,17 @@ const resetSchema = z.object({
 
 type ResetFormValues = z.infer<typeof resetSchema>
 
-type FormState = 'loading' | 'form' | 'success' | 'error'
+type FormState = 'initial' | 'verifying' | 'form' | 'success' | 'error'
 
 export function ResetPasswordForm() {
   const { updatePassword, error: authError } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
-  const [step, setStep] = useState<FormState>('loading')
+  const [step, setStep] = useState<FormState>('initial')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const processedRef = useRef(false)
+  const verifiedRef = useRef(false)
 
   const {
     register,
@@ -43,102 +43,93 @@ export function ResetPasswordForm() {
 
   const password = watch('password')
 
-  // Establecer la sesión de recuperación antes de mostrar el formulario
+  // Leer parámetros de la URL al montar (sin verificar automáticamente)
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
+  const code = searchParams.get('code')
+
   useEffect(() => {
-    if (processedRef.current) return
-    processedRef.current = true
+    // Si no hay token_hash ni code, mostrar error
+    if (!tokenHash && !code) {
+      setErrorMessage('Enlace de recuperación no válido. Solicita uno nuevo desde la página de recuperación.')
+      setStep('error')
+    }
+  }, [tokenHash, code])
+
+  // Verificar el token cuando el usuario pulsa "Continuar"
+  const handleVerify = async () => {
+    if (verifiedRef.current) return
+    verifiedRef.current = true
+    setStep('verifying')
+    setErrorMessage(null)
 
     const supabase = getSupabaseClient()
 
-    async function establishSession() {
-      try {
-        // 1. Comprobar si ya existe una sesión (detectSessionInUrl pudo haberla establecido)
-        const { data: { session: existingSession } } = await supabase.auth.getSession()
-        if (existingSession) {
+    try {
+      // Flujo token_hash (recomendado): validar con verifyOtp
+      if (tokenHash && type === 'recovery') {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery',
+        })
+        if (error) {
+          console.error('[ResetPassword] Error verifying OTP:', error)
+          if (error.message?.toLowerCase().includes('expired')) {
+            setErrorMessage('El enlace de recuperación ha caducado. Solicita uno nuevo.')
+          } else if (error.message?.toLowerCase().includes('invalid')) {
+            setErrorMessage('El enlace de recuperación no es válido o ya fue utilizado. Solicita uno nuevo.')
+          } else {
+            setErrorMessage('No se pudo verificar el enlace de recuperación. Solicita uno nuevo.')
+          }
+          setStep('error')
+          verifiedRef.current = false
+          return
+        }
+        if (data.session) {
           setStep('form')
-          return
+        } else {
+          setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
+          setStep('error')
+          verifiedRef.current = false
         }
-
-        // 2. Recoger parámetros de la URL
-        const code = searchParams.get('code')
-        const tokenHash = searchParams.get('token_hash')
-        const type = searchParams.get('type')
-
-        // Hash params (flujo implícito)
-        const hashParams = new URLSearchParams(
-          typeof window !== 'undefined' ? window.location.hash.substring(1) : ''
-        )
-        const accessToken = hashParams.get('access_token')
-
-        // 3a. Flujo PKCE: intercambiar código por sesión
-        if (code) {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) {
-            console.error('[ResetPassword] Error exchanging code:', error)
-            setErrorMessage(
-              'El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.'
-            )
-            setStep('error')
-            return
-          }
-          if (data.session) {
-            setStep('form')
-          } else {
-            setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
-            setStep('error')
-          }
-          return
-        }
-
-        // 3b. Flujo token_hash + type=recovery
-        if (tokenHash && type === 'recovery') {
-          const { data, error } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: 'recovery',
-          })
-          if (error) {
-            console.error('[ResetPassword] Error verifying OTP:', error)
-            setErrorMessage(
-              'El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.'
-            )
-            setStep('error')
-            return
-          }
-          if (data.session) {
-            setStep('form')
-          } else {
-            setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
-            setStep('error')
-          }
-          return
-        }
-
-        // 3c. Flujo implícito: esperar a que detectSessionInUrl procese el hash
-        if (accessToken) {
-          // Dar tiempo a Supabase para procesar el hash
-          await new Promise((resolve) => setTimeout(resolve, 1500))
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session) {
-            setStep('form')
-          } else {
-            setErrorMessage('El enlace de recuperación ha expirado o ya fue utilizado. Solicita uno nuevo.')
-            setStep('error')
-          }
-          return
-        }
-
-        // 4. No se encontraron parámetros de recuperación
-        setErrorMessage('Enlace de recuperación no válido. Solicita uno nuevo desde la página de recuperación.')
-        setStep('error')
-      } catch (e) {
-        console.error('[ResetPassword] Unexpected error:', e)
-        setErrorMessage('Error al procesar el enlace de recuperación. Intenta de nuevo.')
-        setStep('error')
+        return
       }
-    }
 
-    establishSession()
-  }, [searchParams])
+      // Flujo PKCE (compatibilidad): intercambiar código
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) {
+          console.error('[ResetPassword] Error exchanging code:', error)
+          if (error.message?.toLowerCase().includes('expired')) {
+            setErrorMessage('El enlace de recuperación ha caducado. Solicita uno nuevo.')
+          } else {
+            setErrorMessage('El enlace de recuperación no es válido o ya fue utilizado. Solicita uno nuevo.')
+          }
+          setStep('error')
+          verifiedRef.current = false
+          return
+        }
+        if (data.session) {
+          setStep('form')
+        } else {
+          setErrorMessage('No se pudo establecer la sesión de recuperación. Solicita un nuevo enlace.')
+          setStep('error')
+          verifiedRef.current = false
+        }
+        return
+      }
+
+      // Sin parámetros válidos
+      setErrorMessage('Enlace de recuperación no válido. Solicita uno nuevo.')
+      setStep('error')
+      verifiedRef.current = false
+    } catch (e) {
+      console.error('[ResetPassword] Unexpected error:', e)
+      setErrorMessage('Error al procesar el enlace de recuperación. Intenta de nuevo.')
+      setStep('error')
+      verifiedRef.current = false
+    }
+  }
 
   const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
     if (!pwd) return { label: '', color: 'bg-line', width: '0%' }
@@ -164,7 +155,7 @@ export function ResetPasswordForm() {
       const supabase = getSupabaseClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        setErrorMessage('La sesión de recuperación no está activa. Solicita un nuevo enlace.')
+        setErrorMessage('La sesión de recuperación no está activa. Pulsa "Continuar" de nuevo.')
         setStep('error')
         return
       }
@@ -173,7 +164,6 @@ export function ResetPasswordForm() {
       setStep('success')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'No se pudo actualizar la contraseña'
-      // Mensaje más claro para el error de sesión faltante
       if (msg.includes('Auth session missing') || msg.includes('session missing')) {
         setErrorMessage('La sesión de recuperación ha expirado. Solicita un nuevo enlace.')
         setStep('error')
@@ -185,8 +175,29 @@ export function ResetPasswordForm() {
     }
   })
 
-  // Estado: cargando sesión
-  if (step === 'loading') {
+  // Estado: inicial (mostrar botón para continuar)
+  if (step === 'initial') {
+    return (
+      <div className="text-center py-8">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-lime-400/10">
+          <ShieldCheck className="h-8 w-8 text-accent" />
+        </div>
+        <h2 className="font-display text-xl font-semibold text-fg">Restablecer contraseña</h2>
+        <p className="mt-2 text-sm text-muted">
+          Hemos verificado tu identidad. Pulsa el botón para continuar y establecer tu nueva contraseña.
+        </p>
+        <Button className="mt-6" onClick={handleVerify}>
+          Continuar
+        </Button>
+        <p className="mt-4 text-xs text-faint">
+          Si no has solicitado este cambio, cierra esta página.
+        </p>
+      </div>
+    )
+  }
+
+  // Estado: verificando
+  if (step === 'verifying') {
     return (
       <div className="text-center py-8">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-lime-400/10">

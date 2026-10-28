@@ -81,8 +81,7 @@ export async function resetApplication(): Promise<void> {
   await client.from('workouts').delete().eq('user_id', userId)
   await client.from('body_weights').delete().eq('user_id', userId)
   await client.from('foods').delete().eq('user_id', userId)
-  await client.from('exercises').delete().eq('user_id', userId)
-
+  // Ejercicios NO se borran: son catálogo compartido (solo admin puede borrarlos)
   await client.from('profiles').update({
     name: '',
     initial_weight_kg: 63,

@@ -25,7 +25,39 @@ async function bootstrap() {
 
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     const { registerSW } = await import('virtual:pwa-register')
-    registerSW({ immediate: true })
+
+    // Detectar si había un service worker controlando la página antes de esta carga.
+    // Si lo había, es una actualización (no la primera instalación).
+    const hadController = !!navigator.serviceWorker.controller
+    let refreshing = false
+
+    // Recargar la página cuando un nuevo service worker toma el control,
+    // pero solo si ya había uno anterior (actualización, no primera instalación).
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return
+      if (hadController) {
+        refreshing = true
+        window.location.reload()
+      }
+    })
+
+    registerSW({
+      immediate: true,
+      onRegistered(registration) {
+        if (registration) {
+          // Comprobar actualizaciones periódicamente (cada hora)
+          // para PWAs instaladas que permanecen abiertas.
+          setInterval(() => {
+            registration.update().catch(() => {
+              // Silenciar errores de red en la comprobación de actualizaciones
+            })
+          }, 60 * 60 * 1000)
+        }
+      },
+      onRegisterError(error) {
+        console.error('[PWA] Error al registrar el service worker:', error)
+      },
+    })
   }
 }
 

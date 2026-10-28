@@ -175,7 +175,7 @@ export async function deleteFoodEntry(id: string): Promise<void> {
 }
 
 // ——— Ejercicios ———
-export async function saveExercise(values: ExerciseFormValues, existingId?: string, imageUrl?: string | null): Promise<Exercise> {
+export async function saveExercise(values: ExerciseFormValues, existingId?: string, imageUrl?: string | null, forceId?: string): Promise<Exercise> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
 
@@ -211,7 +211,7 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
     }
   } else {
     exercise = {
-      id: newId(),
+      id: forceId ?? newId(),
       name: values.name,
       muscleGroup: values.muscleGroup as MuscleGroup,
       equipment: values.equipment,

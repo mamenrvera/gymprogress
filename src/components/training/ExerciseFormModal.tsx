@@ -6,6 +6,7 @@ import type { Exercise } from '../../types'
 import { MUSCLE_GROUPS } from '../../types'
 import { exerciseSchema, type ExerciseFormValues } from '../../lib/validators'
 import { saveExercise } from '../../lib/repositories'
+import { newId } from '../../lib/id'
 import { useApp } from '../../context/AppContext'
 import { useAuth } from '../../context/AuthContext'
 import { cn } from '../../lib/cn'
@@ -54,21 +55,22 @@ export function ExerciseFormModal({ open, exercise, onClose, onSaved }: Exercise
   const onSubmit = handleSubmit(async (values) => {
     try {
       if (!exercise?.id && pendingFile && user) {
-        // New exercise with photo: create first, then upload photo
-        const saved = await saveExercise(values, undefined)
+        // New exercise with photo: generate ID, upload photo, then create exercise in a single INSERT
+        // This avoids an UPDATE call, which is now restricted to admin only.
+        const exerciseId = newId()
         try {
           const { compressImage, uploadExercisePhoto } = await import('../../lib/storage')
           const compressed = await compressImage(pendingFile, 800, 0.8)
           const compressedFile = new File([compressed], pendingFile.name, { type: compressed.type })
-          const result = await uploadExercisePhoto(user.id, saved.id, compressedFile)
-          await saveExercise(values, saved.id, result.path)
+          const result = await uploadExercisePhoto(user.id, exerciseId, compressedFile)
+          const saved = await saveExercise(values, undefined, result.path, exerciseId)
           saved.imageUrl = result.path
+          notify('Ejercicio añadido a tu biblioteca')
+          onSaved?.(saved)
+          onClose()
         } catch (e) {
           notify(e instanceof Error ? e.message : 'Error al subir la imagen', 'error')
         }
-        notify('Ejercicio añadido a tu biblioteca')
-        onSaved?.(saved)
-        onClose()
       } else {
         const saved = await saveExercise(values, exercise?.id, imageUrl)
         notify(exercise ? 'Ejercicio actualizado' : 'Ejercicio añadido a tu biblioteca')

@@ -53,6 +53,7 @@ import { formatGrams, formatKcal, formatKg, formatNumber, formatSigned } from '.
 
 import { cn } from '../lib/cn'
 import { useEntries, useWorkouts, useWorkoutExercises, useSets, useBodyWeights } from '../hooks/useSupabaseData'
+import { CardioProgressSection } from '../components/progress/CardioProgressSection'
 
 type Period = 'week' | 'month'
 type WeightRange = '30' | '90' | 'all'
@@ -736,6 +737,8 @@ export function ProgressPage() {
           </>
         )}
       </section>
+
+      <CardioProgressSection />
 
       <WeightModal open={weightModalOpen} onClose={() => setWeightModalOpen(false)} defaultDate={today} />
     </div>

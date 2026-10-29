@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '../ui/Button'
 import { cn } from '../../lib/cn'
 
@@ -17,6 +17,8 @@ type ForgotFormValues = z.infer<typeof forgotSchema>
 export function ForgotPasswordForm() {
   const { resetPassword, error: authError, status } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const initialEmail = (location.state as { email?: string } | null)?.email ?? ''
   const [step, setStep] = useState<'form' | 'sent'>('form')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -26,7 +28,7 @@ export function ForgotPasswordForm() {
     formState: { errors },
   } = useForm<ForgotFormValues>({
     resolver: zodResolver(forgotSchema),
-    defaultValues: { email: '' },
+    defaultValues: { email: initialEmail },
   })
 
   const onSubmit = handleSubmit(async (values) => {

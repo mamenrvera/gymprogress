@@ -40,6 +40,7 @@ export const foodSchema = z
     name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres').max(80, 'Máximo 80 caracteres'),
     brand: optionalText(60),
     category: optionalText(40),
+    barcode: optionalText(32),
     caloriesPer100: z
       .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')

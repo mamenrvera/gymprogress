@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Calculator, Check, Plus, Search, UtensilsCrossed } from 'lucide-react'
+import { ArrowLeft, Calculator, Camera, Check, Loader2, Plus, Search, UtensilsCrossed } from 'lucide-react'
 import type { MealType } from '../../types'
 import { MEAL_TYPES } from '../../types'
 import { nutritionForGrams, roundTo } from '../../lib/calculations'
@@ -12,12 +12,19 @@ import { EmptyState } from '../ui/EmptyState'
 import { cn } from '../../lib/cn'
 import { FoodForm } from './FoodForm'
 import { useFoods } from '../../hooks/useSupabaseData'
+import { BarcodeScannerModal } from './BarcodeScannerModal'
+import { BarcodeConfirmModal } from './BarcodeConfirmModal'
+import { LabelScannerModal } from './LabelScannerModal'
+import { fetchProductByBarcode } from '../../lib/openFoodFacts'
+import type { OpenFoodFactsProduct } from '../../lib/openFoodFacts'
+import type { ParsedLabel } from '../../lib/nutritionLabelOcr'
 
 interface AddFoodModalProps {
   open: boolean
   onClose: () => void
   date: string
   defaultMeal?: MealType
+  mealBlockId?: string
   initialFoodId?: string
   onAdded?: () => void
 }
@@ -29,7 +36,7 @@ function normalize(text: string): string {
     .toLowerCase()
 }
 
-export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', initialFoodId, onAdded }: AddFoodModalProps) {
+export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', mealBlockId, initialFoodId, onAdded }: AddFoodModalProps) {
   const { notify } = useApp()
   const { data: foodsData } = useFoods()
   const foods = foodsData ?? []
@@ -39,6 +46,11 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', in
   const [grams, setGrams] = useState('100')
   const [meal, setMeal] = useState<MealType>(defaultMeal)
   const [saving, setSaving] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannedProduct, setScannedProduct] = useState<OpenFoodFactsProduct | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [labelScannerOpen, setLabelScannerOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -72,7 +84,7 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', in
     }
     setSaving(true)
     try {
-      await addFoodEntry({ food: selected, grams: parsedGrams, date, meal })
+      await addFoodEntry({ food: selected, grams: parsedGrams, date, meal, mealBlockId })
       notify(`${selected.name} añadido a ${mealLabel.toLowerCase()}`)
       onAdded?.()
       onClose()
@@ -83,6 +95,43 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', in
     }
   }
 
+  const handleBarcodeDetected = async (barcode: string) => {
+    setScannerOpen(false)
+    setScanning(true)
+    try {
+      const result = await fetchProductByBarcode(barcode)
+      if (!result.found || !result.product) {
+        notify('Producto no encontrado en Open Food Facts. Puedes crearlo manualmente.', 'error')
+        setMode('create')
+        return
+      }
+      setScannedProduct(result.product)
+      setConfirmOpen(true)
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Error al buscar el producto', 'error')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const handleLabelResult = (parsed: ParsedLabel) => {
+    const synthetic: OpenFoodFactsProduct = {
+      barcode: '',
+      name: '',
+      caloriesPer100: parsed.caloriesPer100,
+      proteinPer100: parsed.proteinPer100,
+      carbsPer100: parsed.carbsPer100,
+      fatPer100: parsed.fatPer100,
+      saturatedFatPer100: parsed.saturatedFatPer100,
+      sugarsPer100: parsed.sugarsPer100,
+      fiberPer100: parsed.fiberPer100,
+      saltPer100: parsed.saltPer100,
+    }
+    setScannedProduct(synthetic)
+    setLabelScannerOpen(false)
+    setConfirmOpen(true)
+  }
+
   const title = mode === 'create' ? 'Nuevo alimento' : 'Añadir alimento'
   const description =
     mode === 'create'
@@ -90,6 +139,7 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', in
       : 'Busca en tu biblioteca o crea un alimento con los datos de su etiqueta.'
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -293,8 +343,51 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', in
           >
             <Plus className="h-3.5 w-3.5" /> Crear un alimento nuevo
           </button>
+
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            disabled={scanning}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line py-2.5 text-xs font-medium text-muted transition hover:border-lime-500/40 hover:text-accent"
+          >
+            {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />} Escanear alimento
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setLabelScannerOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line py-2.5 text-xs font-medium text-muted transition hover:border-lime-500/40 hover:text-accent"
+          >
+            <Camera className="h-3.5 w-3.5" /> Leer etiqueta desde foto
+          </button>
         </div>
       )}
     </Modal>
+
+    <BarcodeScannerModal
+      open={scannerOpen}
+      onClose={() => setScannerOpen(false)}
+      onDetected={(code) => void handleBarcodeDetected(code)}
+    />
+
+    <BarcodeConfirmModal
+      open={confirmOpen}
+      product={scannedProduct}
+      date={date}
+      defaultMeal={meal}
+      onClose={() => setConfirmOpen(false)}
+      onAdded={() => {
+        setConfirmOpen(false)
+        onAdded?.()
+        onClose()
+      }}
+    />
+
+    <LabelScannerModal
+      open={labelScannerOpen}
+      onClose={() => setLabelScannerOpen(false)}
+      onResult={handleLabelResult}
+    />
+    </>
   )
 }

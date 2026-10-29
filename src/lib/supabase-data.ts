@@ -37,6 +37,7 @@ export async function fetchFoodsFromSupabase(userId: string): Promise<Food[]> {
     name: row.name as string,
     brand: row.brand as string | undefined,
     category: row.category as string | undefined,
+    barcode: row.barcode as string | undefined,
     per100: {
       calories: row.calories_per_100 as number,
       protein: row.protein_per_100 as number,
@@ -51,7 +52,7 @@ export async function fetchFoodsFromSupabase(userId: string): Promise<Food[]> {
 }
 
 export async function upsertFoodToSupabase(food: Food, userId: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('foods')
     .upsert({
       id: food.id,
@@ -59,6 +60,7 @@ export async function upsertFoodToSupabase(food: Food, userId: string): Promise<
       name: food.name,
       brand: food.brand,
       category: food.category,
+      barcode: food.barcode,
       calories_per_100: food.per100.calories,
       protein_per_100: food.per100.protein,
       carbs_per_100: food.per100.carbs,
@@ -94,6 +96,7 @@ export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntr
     id: row.id as string,
     date: row.date as string,
     meal: row.meal as MealType,
+    mealBlockId: row.meal_block_id as string | undefined,
     foodId: row.food_id as string | undefined,
     foodName: row.food_name as string,
     brand: row.brand as string | undefined,
@@ -117,13 +120,14 @@ export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntr
 }
 
 export async function upsertEntryToSupabase(entry: FoodEntry, userId: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('entries')
     .upsert({
       id: entry.id,
       user_id: userId,
       date: entry.date,
       meal: entry.meal,
+      meal_block_id: entry.mealBlockId,
       food_id: entry.foodId,
       food_name: entry.foodName,
       brand: entry.brand,
@@ -533,4 +537,136 @@ export async function hasRemoteData(userId: string): Promise<boolean> {
 // ============================================================
 // EXPORT: Check connection
 // ============================================================
+// ============================================================
+// CARDIO SESSIONS
+// ============================================================
+export async function fetchCardioSessionsFromSupabase(userId: string): Promise<import('../lib/cardio').CardioSession[]> {
+  const { data, error } = await (supabase as any)
+    .from('cardio_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+  if (error) throw error
+  return (data || []).map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    userId: row.user_id as string,
+    activityType: row.activity_type as import('../lib/cardio').ActivityType,
+    customName: row.custom_name as string | undefined,
+    date: row.date as string,
+    startTime: row.started_at as string | undefined,
+    durationMin: row.duration_min as number,
+    intensity: row.intensity as import('../lib/cardio').CardioIntensity,
+    rpe: row.rpe as number | undefined,
+    distanceKm: row.distance_km as number | undefined,
+    avgSpeedKmh: row.avg_speed_kmh as number | undefined,
+    maxSpeedKmh: row.max_speed_kmh as number | undefined,
+    avgInclinePct: row.avg_incline_pct as number | undefined,
+    maxInclinePct: row.max_incline_pct as number | undefined,
+    runMin: row.run_min as number | undefined,
+    walkMin: row.walk_min as number | undefined,
+    warmupMin: row.warmup_min as number | undefined,
+    cooldownMin: row.cooldown_min as number | undefined,
+    resistance: row.resistance as number | undefined,
+    cadenceRpm: row.cadence_rpm as number | undefined,
+    elevationGainM: row.elevation_gain_m as number | undefined,
+    surface: row.surface as string | undefined,
+    modality: row.modality as import('../lib/cardio').CardioModality | undefined,
+    sets: row.sets as number | undefined,
+    result: row.result as string | undefined,
+    calories: row.calories as number | undefined,
+    caloriesSource: row.calories_source as import('../lib/cardio').CaloriesSource | undefined,
+    hrAvg: row.hr_avg as number | undefined,
+    hrMax: row.hr_max as number | undefined,
+    notes: row.notes as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }))
+}
+
+export async function upsertCardioSessionToSupabase(session: import('../lib/cardio').CardioSession, userId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('cardio_sessions')
+    .upsert({
+      id: session.id,
+      user_id: userId,
+      activity_type: session.activityType,
+      custom_name: session.customName,
+      date: session.date,
+      started_at: session.startTime,
+      duration_min: session.durationMin,
+      intensity: session.intensity,
+      rpe: session.rpe,
+      distance_km: session.distanceKm,
+      avg_speed_kmh: session.avgSpeedKmh,
+      max_speed_kmh: session.maxSpeedKmh,
+      avg_incline_pct: session.avgInclinePct,
+      max_incline_pct: session.maxInclinePct,
+      run_min: session.runMin,
+      walk_min: session.walkMin,
+      warmup_min: session.warmupMin,
+      cooldown_min: session.cooldownMin,
+      resistance: session.resistance,
+      cadence_rpm: session.cadenceRpm,
+      elevation_gain_m: session.elevationGainM,
+      surface: session.surface,
+      modality: session.modality,
+      sets: session.sets,
+      result: session.result,
+      calories: session.calories,
+      calories_source: session.caloriesSource,
+      hr_avg: session.hrAvg,
+      hr_max: session.hrMax,
+      notes: session.notes,
+      created_at: session.createdAt,
+      updated_at: session.updatedAt,
+    }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteCardioSessionFromSupabase(id: string, userId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('cardio_sessions')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
+// ============================================================
+// MEAL BLOCKS
+// ============================================================
+export async function fetchMealBlocksFromSupabase(userId: string, date?: string): Promise<import('../types').MealBlock[]> {
+  let q = (supabase as any).from('meal_blocks').select('*').eq('user_id', userId)
+  if (date) q = q.eq('date', date)
+  const { data, error } = await q.order('created_at')
+  if (error) throw error
+  return (data || []).map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    userId: row.user_id as string,
+    date: row.date as string,
+    mealType: row.meal_type as import('../types').MealType,
+    title: row.title as string | undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }))
+}
+
+export async function upsertMealBlockToSupabase(block: import('../types').MealBlock, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('meal_blocks').upsert({
+    id: block.id,
+    user_id: userId,
+    date: block.date,
+    meal_type: block.mealType,
+    title: block.title,
+    created_at: block.createdAt,
+    updated_at: block.updatedAt,
+  }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteMealBlockFromSupabase(id: string, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('meal_blocks').delete().eq('id', id).eq('user_id', userId)
+  if (error) throw error
+}
+
 export { getCurrentUserId }

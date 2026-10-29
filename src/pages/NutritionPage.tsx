@@ -18,9 +18,12 @@ import { DateNavigator } from '../components/ui/DateNavigator'
 import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
+import { Modal } from '../components/ui/Modal'
 import { NutritionSummary } from '../components/nutrition/NutritionSummary'
-import { MealSection } from '../components/nutrition/MealSection'
+import { MealBlockCard } from '../components/nutrition/MealBlockCard'
 import { AddFoodModal } from '../components/nutrition/AddFoodModal'
+import { createMealBlock, deleteMealBlock } from '../lib/repositories'
+import { useMealBlocks } from '../hooks/useSupabaseData'
 import { FoodFormModal } from '../components/nutrition/FoodFormModal'
 import { EditFoodEntryModal } from '../components/nutrition/EditFoodEntryModal'
 import { cn } from '../lib/cn'
@@ -43,12 +46,15 @@ export function NutritionPage() {
 
   const { data: entriesData, refetch: refetchEntries } = useEntries()
   const { data: foodsData, refetch: refetchFoods } = useFoods()
+  const { data: mealBlocksData, refetch: refetchMealBlocks } = useMealBlocks(selectedDate)
 
   const entries = entriesData ?? []
   const foods = foodsData ?? []
+  const mealBlocks = mealBlocksData ?? []
 
   const [addOpen, setAddOpen] = useState(false)
   const [addMeal, setAddMeal] = useState<MealType>('almuerzo')
+  const [addMealBlockId, setAddMealBlockId] = useState<string | undefined>(undefined)
   const [initialFoodId, setInitialFoodId] = useState<string | undefined>(undefined)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [foodFormOpen, setFoodFormOpen] = useState(false)
@@ -56,6 +62,9 @@ export function NutritionPage() {
   const [deletingFood, setDeletingFood] = useState<Food | undefined>(undefined)
   const [librarySearch, setLibrarySearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set())
+  const [mealSelectorOpen, setMealSelectorOpen] = useState(false)
+  const [deletingBlock, setDeletingBlock] = useState<import('../types').MealBlock | null>(null)
 
   useEffect(() => {
     if (!searchParams.get('add')) return
@@ -73,6 +82,45 @@ export function NutritionPage() {
   const totals = useMemo(() => sumEntries(entries.filter(e => e.date === selectedDate)), [entries, selectedDate])
   const editingEntry = entries.find((entry) => entry.id === editingEntryId)
 
+  // Agrupar entradas del día por bloque de comida.
+  // Las entradas sin mealBlockId (legacy) se agrupan en un bloque sintético por tipo de comida.
+  const dayBlocks = useMemo(() => {
+    const dayEntries = entries.filter((e) => e.date === selectedDate)
+    const blocks: { block: import('../types').MealBlock; entries: typeof entries }[] = []
+    const usedEntryIds = new Set<string>()
+
+    for (const mb of mealBlocks) {
+      const blockEntries = dayEntries.filter((e) => e.mealBlockId === mb.id)
+      blocks.push({ block: mb, entries: blockEntries })
+      blockEntries.forEach((e) => usedEntryIds.add(e.id))
+    }
+
+    // Legacy entries without a block → synthetic blocks grouped by meal type
+    const legacyByMeal = new Map<string, typeof entries>()
+    for (const e of dayEntries) {
+      if (usedEntryIds.has(e.id)) continue
+      if (!e.mealBlockId) {
+        const list = legacyByMeal.get(e.meal) ?? []
+        list.push(e)
+        legacyByMeal.set(e.meal, list)
+      }
+    }
+    for (const [meal, list] of legacyByMeal) {
+      blocks.push({
+        block: {
+          id: `legacy-${meal}`,
+          userId: '',
+          date: selectedDate,
+          mealType: meal as import('../types').MealType,
+          createdAt: list[0]?.createdAt ?? new Date().toISOString(),
+          updatedAt: list[0]?.updatedAt ?? new Date().toISOString(),
+        },
+        entries: list,
+      })
+    }
+    return blocks
+  }, [entries, mealBlocks, selectedDate])
+
   const filteredFoods = useMemo(() => {
     const term = normalize(librarySearch.trim())
     return foods.filter((food) => {
@@ -82,10 +130,40 @@ export function NutritionPage() {
     })
   }, [foods, librarySearch, categoryFilter])
 
-  const openAddForMeal = (meal: MealType) => {
+  const openAddForMeal = (meal: MealType, blockId?: string) => {
     setAddMeal(meal)
+    setAddMealBlockId(blockId)
     setInitialFoodId(undefined)
     setAddOpen(true)
+  }
+
+  const handleCreateMealBlock = async (mealType: MealType) => {
+    try {
+      await createMealBlock(mealType, selectedDate)
+      setMealSelectorOpen(false)
+      void refetchMealBlocks()
+      notify('Comida añadida')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo crear la comida', 'error')
+    }
+  }
+
+  const handleDeleteBlock = async () => {
+    if (!deletingBlock) return
+    try {
+      // Delete all entries in this block first
+      const blockEntries = entries.filter((e) => e.mealBlockId === deletingBlock.id)
+      for (const entry of blockEntries) {
+        await (await import('../lib/supabase')).getSupabaseClient().from('entries').delete().eq('id', entry.id)
+      }
+      await deleteMealBlock(deletingBlock.id)
+      setDeletingBlock(null)
+      void refetchEntries()
+      void refetchMealBlocks()
+      notify('Comida eliminada')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo eliminar la comida', 'error')
+    }
   }
 
   const setTab = (nextTab: 'diario' | 'alimentos') => {
@@ -196,15 +274,50 @@ export function NutritionPage() {
           </aside>
 
           <div className="space-y-3 lg:col-start-1 lg:row-start-1">
-            {MEAL_TYPES.map((meal) => (
-              <MealSection
-                key={meal.value}
-                meal={meal.value}
-                entries={entries.filter((entry) => entry.date === selectedDate && entry.meal === meal.value)}
-                onAdd={() => openAddForMeal(meal.value)}
-                onEdit={(entry) => setEditingEntryId(entry.id)}
-              />
-            ))}
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => setMealSelectorOpen(true)}>
+                <Plus className="h-4 w-4" /> Añadir comida
+              </Button>
+            </div>
+
+            {dayBlocks.length === 0 ? (
+              <div className="card">
+                <EmptyState
+                  icon={<UtensilsCrossed className="h-5 w-5" />}
+                  title="Sin comidas registradas"
+                  description="Pulsa «Añadir comida» para crear tu primer bloque del día."
+                />
+              </div>
+            ) : (
+              dayBlocks.map(({ block, entries: blockEntries }) => (
+                <MealBlockCard
+                  key={block.id}
+                  block={block}
+                  entries={blockEntries}
+                  collapsed={collapsedBlocks.has(block.id)}
+                  onToggle={() => {
+                    setCollapsedBlocks((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(block.id)) next.delete(block.id)
+                      else next.add(block.id)
+                      return next
+                    })
+                  }}
+                  onAdd={() => openAddForMeal(block.mealType, block.id.startsWith('legacy-') ? undefined : block.id)}
+                  onEditEntry={(entry) => setEditingEntryId(entry.id)}
+                  onDeleteEntry={async (entry) => {
+                    try {
+                      await (await import('../lib/supabase')).getSupabaseClient().from('entries').delete().eq('id', entry.id)
+                      void refetchEntries()
+                    } catch {
+                      notify('No se pudo eliminar el alimento', 'error')
+                    }
+                  }}
+                  onDeleteBlock={() => setDeletingBlock(block)}
+                />
+              ))
+            )}
+
             <p className="px-1 pt-1 text-[10px] leading-relaxed text-faint">
               Toca cualquier alimento para cambiar los gramos o la comida. Las calorías del resumen son las declaradas
               en la etiqueta; el cálculo 4-4-9 se muestra aparte como referencia.
@@ -335,8 +448,36 @@ export function NutritionPage() {
         onClose={() => setAddOpen(false)}
         date={selectedDate}
         defaultMeal={addMeal}
+        mealBlockId={addMealBlockId}
         initialFoodId={initialFoodId}
-        onAdded={() => void refetchEntries()}
+        onAdded={() => {
+          void refetchEntries()
+        }}
+      />
+
+      <Modal open={mealSelectorOpen} onClose={() => setMealSelectorOpen(false)} title="Añadir comida" size="sm">
+        <div className="space-y-2">
+          {MEAL_TYPES.map((meal) => (
+            <button
+              key={meal.value}
+              type="button"
+              onClick={() => void handleCreateMealBlock(meal.value)}
+              className="flex w-full items-center gap-3 rounded-xl border border-line bg-raised/60 px-3 py-2.5 text-left transition hover:border-lime-500/40 hover:bg-raised"
+            >
+              <span className="text-sm font-medium text-fg">{meal.label}</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deletingBlock)}
+        title="Eliminar comida"
+        message="¿Quieres eliminar esta comida y sus alimentos?"
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={() => void handleDeleteBlock()}
+        onClose={() => setDeletingBlock(null)}
       />
       <FoodFormModal
         open={foodFormOpen}

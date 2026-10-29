@@ -16,6 +16,7 @@ import type {
 import type { BodyWeightFormValues, ExerciseFormValues, FoodFormValues, SettingsFormValues, WorkoutFormValues } from './validators'
 import { nutritionForGrams } from './calculations'
 import { newId, nowISO } from './id'
+import { findDuplicateExercise, DUPLICATE_EXERCISE_MESSAGE } from './exerciseNames'
 import {
   upsertFoodToSupabase,
   deleteFoodFromSupabase,
@@ -23,6 +24,8 @@ import {
   deleteEntryFromSupabase,
   upsertExerciseToSupabase,
   deleteExerciseFromSupabase,
+  upsertCardioSessionToSupabase,
+  deleteCardioSessionFromSupabase,
   upsertWorkoutToSupabase,
   deleteWorkoutFromSupabase,
   upsertWorkoutExerciseToSupabase,
@@ -51,16 +54,42 @@ export async function saveFood(values: FoodFormValues, existingId?: string): Pro
   if (!userId) throw new Error('No hay sesión activa')
 
   const timestamp = nowISO()
+  const client = (await import('./supabase')).getSupabaseClient()
+
+  // Deduplicación por código de barras: si el usuario ya tiene un alimento
+  // con este barcode, reutilizarlo en lugar de crear un duplicado.
+  if (!existingId && values.barcode && values.barcode.trim() !== '') {
+    const { data: existing } = await (client as any)
+      .from('foods')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('barcode', values.barcode.trim())
+      .maybeSingle()
+
+    if (existing?.id) {
+      // Reutilizar el alimento existente: actualizar sus valores
+      existingId = existing.id as string
+    }
+  }
+
   let food: Food
   if (existingId) {
+    // Fetch existing to preserve createdAt
+    const { data: existing } = await client
+      .from('foods')
+      .select('created_at')
+      .eq('id', existingId)
+      .eq('user_id', userId)
+      .single()
     food = {
       id: existingId,
       name: values.name,
       brand: values.brand,
       category: values.category,
+      barcode: values.barcode,
       per100: per100FromForm(values),
       notes: values.notes,
-      createdAt: timestamp,
+      createdAt: (existing?.created_at as string) ?? timestamp,
       updatedAt: timestamp,
     }
   } else {
@@ -69,6 +98,7 @@ export async function saveFood(values: FoodFormValues, existingId?: string): Pro
       name: values.name,
       brand: values.brand,
       category: values.category,
+      barcode: values.barcode,
       per100: per100FromForm(values),
       notes: values.notes,
       createdAt: timestamp,
@@ -76,7 +106,17 @@ export async function saveFood(values: FoodFormValues, existingId?: string): Pro
     }
   }
 
-  await upsertFoodToSupabase(food, userId)
+  try {
+    await upsertFoodToSupabase(food, userId)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error al guardar el alimento'
+    console.error('[Repo] saveFood error:', msg, e)
+    const code = (e as { code?: string })?.code
+    if (code === '23505' || msg.includes('foods_user_barcode_unique') || msg.includes('duplicate key')) {
+      throw new Error('Ya tienes un alimento registrado con este código de barras.')
+    }
+    throw e
+  }
   return food
 }
 
@@ -86,12 +126,38 @@ export async function deleteFood(id: string): Promise<void> {
   await deleteFoodFromSupabase(id, userId)
 }
 
+// ——— Bloques de comidas ———
+export async function createMealBlock(mealType: import('../types').MealType, date: string): Promise<import('../types').MealBlock> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const timestamp = nowISO()
+  const block: import('../types').MealBlock = {
+    id: newId(),
+    userId,
+    date,
+    mealType,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+  const { upsertMealBlockToSupabase } = await import('./supabase-data')
+  await upsertMealBlockToSupabase(block, userId)
+  return block
+}
+
+export async function deleteMealBlock(id: string): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { deleteMealBlockFromSupabase } = await import('./supabase-data')
+  await deleteMealBlockFromSupabase(id, userId)
+}
+
 // ——— Registro de comidas ———
 export async function addFoodEntry(params: {
   food: Food
   grams: number
   date: string
   meal: MealType
+  mealBlockId?: string
 }): Promise<FoodEntry> {
   if (!Number.isFinite(params.grams) || params.grams <= 0) throw new Error('Los gramos deben ser mayores que 0')
   const userId = await getCurrentUserId()
@@ -103,6 +169,7 @@ export async function addFoodEntry(params: {
     id: newId(),
     date: params.date,
     meal: params.meal,
+    mealBlockId: params.mealBlockId,
     foodId: params.food.id,
     foodName: params.food.name,
     brand: params.food.brand,
@@ -179,6 +246,25 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
 
+  // Comprobar duplicados en TODO el catálogo compartido (todos los usuarios),
+  // ignorando mayúsculas/minúsculas y espacios sobrantes.
+  // Al editar, se excluye el propio ejercicio (existingId).
+  const dupClient = (await import('./supabase')).getSupabaseClient()
+  const { data: catalogNames, error: dupCheckError } = await dupClient
+    .from('exercises')
+    .select('id, name')
+  if (dupCheckError) {
+    // Si falla la consulta, continuamos: la restricción UNIQUE de la base de datos
+    // (migración 013) actúa como protección final.
+    console.error('[Repo] Error checking duplicate exercises:', dupCheckError)
+  } else {
+    const duplicate = findDuplicateExercise(catalogNames || [], values.name, existingId)
+    if (duplicate) {
+      console.warn('[Repo] Duplicate exercise blocked:', values.name, 'matches', duplicate.name)
+      throw new Error(DUPLICATE_EXERCISE_MESSAGE)
+    }
+  }
+
   const timestamp = nowISO()
   let exercise: Exercise
   let existingUserId: string | undefined
@@ -230,6 +316,12 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error al guardar el ejercicio'
     console.error('[Repo] saveExercise error:', msg, e)
+    // Violación de restricción UNIQUE (migración 013): dos usuarios intentaron
+    // crear el mismo ejercicio simultáneamente.
+    const code = (e as { code?: string })?.code
+    if (code === '23505' || msg.includes('exercises_name_normalized_unique') || msg.includes('duplicate key')) {
+      throw new Error(DUPLICATE_EXERCISE_MESSAGE)
+    }
     if (msg.includes('new row violates row-level security') || msg.includes('RLS') || msg.includes('permission')) {
       throw new Error('No tienes permiso para modificar este ejercicio. Solo el administrador puede hacerlo.')
     }
@@ -268,6 +360,65 @@ export async function deleteExercise(id: string): Promise<void> {
   }
 }
 
+// ——— Sesiones de cardio / deportes ———
+export async function saveCardioSession(values: import('./cardioValidators').CardioSessionFormValues, existingId?: string): Promise<import('./cardio').CardioSession> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  const { formToSession } = await import('./cardioValidators')
+  const base = formToSession(values, existingId)
+  const timestamp = nowISO()
+  const session: import('./cardio').CardioSession = {
+    id: existingId ?? newId(),
+    userId,
+    activityType: base.activityType,
+    customName: base.customName,
+    date: base.date,
+    startTime: base.startTime,
+    durationMin: base.durationMin,
+    intensity: base.intensity,
+    rpe: base.rpe,
+    distanceKm: base.distanceKm,
+    avgSpeedKmh: base.avgSpeedKmh,
+    maxSpeedKmh: base.maxSpeedKmh,
+    avgInclinePct: base.avgInclinePct,
+    maxInclinePct: base.maxInclinePct,
+    runMin: base.runMin,
+    walkMin: base.walkMin,
+    warmupMin: base.warmupMin,
+    cooldownMin: base.cooldownMin,
+    resistance: base.resistance,
+    cadenceRpm: base.cadenceRpm,
+    elevationGainM: base.elevationGainM,
+    surface: base.surface,
+    modality: base.modality,
+    sets: base.sets,
+    result: base.result,
+    calories: base.calories,
+    caloriesSource: base.caloriesSource,
+    hrAvg: base.hrAvg,
+    hrMax: base.hrMax,
+    notes: base.notes,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  if (existingId) {
+    const client = (await import('./supabase')).getSupabaseClient()
+    const { data: existing } = await (client as any).from('cardio_sessions').select('created_at').eq('id', existingId).single()
+    if (existing?.created_at) session.createdAt = existing.created_at as string
+  }
+
+  await upsertCardioSessionToSupabase(session, userId)
+  return session
+}
+
+export async function deleteCardioSession(id: string): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  await deleteCardioSessionFromSupabase(id, userId)
+}
+
 // ——— Sesiones de entrenamiento ———
 export async function createWorkout(
   values: WorkoutFormValues,
@@ -275,6 +426,32 @@ export async function createWorkout(
 ): Promise<Workout> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
+
+  // Evitar sesiones duplicadas: si ya hay una sesión en curso, reutilizarla.
+  if (options.startNow) {
+    const client = (await import('./supabase')).getSupabaseClient()
+    const { data: active } = await client
+      .from('workouts')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'in_progress')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (active && active.length > 0) {
+      const row = active[0]
+      return {
+        id: row.id as string,
+        date: row.date as string,
+        name: row.name as string,
+        status: 'in_progress' as WorkoutStatus,
+        notes: row.notes as string | undefined,
+        startedAt: row.started_at as string | undefined,
+        finishedAt: row.finished_at as string | undefined,
+        createdAt: row.created_at as string,
+        updatedAt: row.updated_at as string,
+      }
+    }
+  }
 
   const timestamp = nowISO()
   const workout: Workout = {

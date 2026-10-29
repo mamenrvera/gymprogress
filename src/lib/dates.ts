@@ -164,6 +164,31 @@ export function formatDuration(minutes: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
+/** Formatea segundos como HH:MM:SS (cronómetro en vivo). */
+export function formatStopwatch(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(Number.isFinite(totalSeconds) ? totalSeconds : 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+/** Formatea una duración en segundos de forma natural: "1 h 24 min" o "42 min 18 s". */
+export function formatDurationLong(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '—'
+  const s = Math.round(totalSeconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) {
+    return sec > 0 && m === 0 ? `${h} h ${sec} s` : (m > 0 ? `${h} h ${m} min` : `${h} h`)
+  }
+  if (m > 0) {
+    return sec > 0 ? `${m} min ${sec} s` : `${m} min`
+  }
+  return `${sec} s`
+}
+
 /** Etiqueta corta de una semana a partir de su lunes. */
 export function weekLabel(weekStartISO: string): string {
   return `${formatShortEs(weekStartISO)} – ${formatShortEs(addDaysISO(weekStartISO, 6))}`

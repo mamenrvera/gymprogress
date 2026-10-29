@@ -5,6 +5,7 @@ import type { Food } from '../../types'
 import { FOOD_CATEGORIES } from '../../types'
 import { foodSchema, type FoodFormValues, getFoodMacroWarnings, parseDecimal } from '../../lib/validators'
 import { kcalFromMacros, roundTo } from '../../lib/calculations'
+import { scoreFood, gradeColor } from '../../lib/nutritionScore'
 import { saveFood } from '../../lib/repositories'
 import { useApp } from '../../context/AppContext'
 import { Button } from '../ui/Button'
@@ -29,6 +30,7 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
       name: initialFood?.name ?? '',
       brand: initialFood?.brand ?? '',
       category: initialFood?.category ?? '',
+      barcode: initialFood?.barcode ?? '',
       caloriesPer100: initialFood?.per100.calories ?? 0,
       proteinPer100: initialFood?.per100.protein ?? 0,
       carbsPer100: initialFood?.per100.carbs ?? 0,
@@ -48,6 +50,7 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
   const difference = roundTo(declared - estimated, 1)
   const mismatch = declared > 0 && Math.abs(difference) > Math.max(25, declared * 0.2)
   const macroWarnings = getFoodMacroWarnings({ proteinPer100: protein, carbsPer100: carbs, fatPer100: fat, fiberPer100: fiber })
+  const foodScore = scoreFood({ per100: { calories: declared, protein, carbs, fat, fiber }, name: values.name, category: values.category })
 
   const onSubmit = handleSubmit(async (formValues) => {
     try {
@@ -95,6 +98,19 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="food-barcode">
+            Código de barras (opcional)
+          </label>
+          <input
+            id="food-barcode"
+            className={cn('input', errors.barcode && 'input-error')}
+            placeholder="Ej. 8410076012345"
+            {...register('barcode')}
+          />
+          {errors.barcode ? <p className="field-error">{errors.barcode.message}</p> : null}
         </div>
       </div>
 
@@ -216,6 +232,14 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
           placeholder="Opcional: sabor, envase, equivalencias…"
           {...register('notes')}
         />
+      </div>
+
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-raised/50 px-3 py-2 text-xs">
+        <span className="text-muted">Calidad nutricional:</span>
+        <span className={`rounded-md border px-2 py-0.5 font-semibold ${gradeColor(foodScore.grade)}`}>
+          {foodScore.grade} · {foodScore.score}/100
+        </span>
+        <span className="text-faint truncate">{foodScore.explanation}</span>
       </div>
 
       <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">

@@ -27,11 +27,14 @@ export function LoginForm() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
   })
+
+  const emailValue = watch('email')
 
   const onSubmit = handleSubmit(async (values) => {
     setIsSubmitting(true)
@@ -104,12 +107,13 @@ export function LoginForm() {
           <input type="checkbox" className="checkbox" />
           <span className="text-sm text-muted">Recordarme</span>
         </label>
-        <a
-          href="/recuperar"
+        <button
+          type="button"
+          onClick={() => navigate('/recuperar', { state: { email: emailValue } })}
           className="text-sm font-medium text-accent hover:underline"
         >
           ¿Has olvidado tu contraseña?
-        </a>
+        </button>
       </div>
 
       <Button type="submit" className="w-full" loading={isSubmitting || status === 'loading'} disabled={status === 'loading'}>

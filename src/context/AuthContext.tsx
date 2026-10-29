@@ -22,6 +22,9 @@ export interface AuthContextValue {
   error: string | null
   isPasswordRecovery: boolean
 
+  // Utilidades
+  checkEmailExists: (email: string) => Promise<boolean>
+
   // Acciones de autenticación
   signUp: (email: string, password: string) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
@@ -174,11 +177,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [])
 
+  // Comprobar si un correo está registrado en GymProgress (via Edge Function)
+  const checkEmailExists = useCallback(async (email: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('check-email-exists', {
+        body: { email },
+      })
+      if (error) {
+        console.error('[Auth] Error checking email:', error)
+        return true // Asumir que existe para no bloquear el flujo
+      }
+      return data?.exists === true
+    } catch (e) {
+      console.error('[Auth] Error checking email:', e)
+      return true // Asumir que existe para no bloquear el flujo
+    }
+  }, [])
+
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null)
     try {
+      // Comprobar si el correo está registrado
+      const exists = await checkEmailExists(email)
+      if (!exists) {
+        const msg = 'No existe ninguna cuenta registrada con este correo electrónico en GymProgress.'
+        setError(msg)
+        console.error('[Auth]', msg)
+        throw new Error(msg)
+      }
+
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) throw error
+      if (error) {
+        // Contraseña incorrecta (el correo ya fue verificado que existe)
+        if (error.message?.toLowerCase().includes('invalid') || error.message?.toLowerCase().includes('credentials')) {
+          throw new Error('La contraseña es incorrecta.')
+        }
+        throw error
+      }
       console.log('[Auth] Sesión iniciada correctamente')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Credenciales incorrectas'
@@ -186,8 +221,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('[Auth]', msg)
       throw e
     }
-  }, [])
-
+  }, [checkEmailExists])
   const signOut = useCallback(async () => {
     setError(null)
     try {
@@ -205,6 +239,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const resetPassword = useCallback(async (email: string) => {
     setError(null)
     try {
+      // Comprobar si el correo está registrado
+      const exists = await checkEmailExists(email)
+      if (!exists) {
+        const msg = 'No existe ninguna cuenta registrada con este correo electrónico en GymProgress. No se ha enviado ningún enlace de recuperación.'
+        setError(msg)
+        console.error('[Auth]', msg)
+        throw new Error(msg)
+      }
+
       // Importar getAppUrl dinámicamente para evitar dependencia circular
       const { getAppUrl } = await import('../lib/supabase')
       const appUrl = getAppUrl()
@@ -219,7 +262,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('[Auth]', msg)
       throw e
     }
-  }, [])
+  }, [checkEmailExists])
 
   const updatePassword = useCallback(async (newPassword: string) => {
     setError(null)
@@ -297,10 +340,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     updateTargets,
     refreshSession,
     clearError,
+    checkEmailExists,
   }), [
     user, session, profile, targets, status, error, isPasswordRecovery,
     signUp, signIn, signOut, resetPassword, updatePassword,
     updateProfile, updateTargets, refreshSession, clearError,
+    checkEmailExists,
   ])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

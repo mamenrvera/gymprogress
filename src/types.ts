@@ -122,8 +122,19 @@ export interface Food {
   name: string
   brand?: string
   category?: string
+  barcode?: string
   per100: NutritionPer100
   notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MealBlock {
+  id: string
+  userId: string
+  date: string
+  mealType: MealType
+  title?: string
   createdAt: string
   updatedAt: string
 }
@@ -132,6 +143,7 @@ export interface FoodEntry {
   id: string
   date: string
   meal: MealType
+  mealBlockId?: string
   foodId?: string
   foodName: string
   brand?: string

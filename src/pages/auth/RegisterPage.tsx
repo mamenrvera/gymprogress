@@ -19,13 +19,6 @@ export function RegisterPage() {
           <RegisterForm />
         </div>
 
-        <p className="mt-6 text-center text-xs text-faint">
-          Al crear tu cuenta, aceptas nuestros{' '}
-          <a href="#" className="text-accent hover:underline">Términos de uso</a>
-          {' '}y{' '}
-          <a href="#" className="text-accent hover:underline">Política de privacidad</a>
-          .
-        </p>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronRight,
   Dumbbell,
+  HeartPulse,
   ListChecks,
   Pencil,
   Plus,
@@ -12,6 +13,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import type { Exercise, MuscleGroup, Workout } from '../types'
+import type { CardioSession } from '../lib/cardio'
 import { MUSCLE_GROUPS, MUSCLE_LABELS } from '../types'
 import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
@@ -38,8 +40,11 @@ import { formatNumber } from '../lib/format'
 import { deleteExercise } from '../lib/repositories'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
 import { cn } from '../lib/cn'
-import { useWorkouts, useWorkoutExercises, useSets, useExercises } from '../hooks/useSupabaseData'
+import { useWorkouts, useWorkoutExercises, useSets, useExercises, useCardioSessions } from '../hooks/useSupabaseData'
 import { ExercisePhoto } from '../components/training/ExercisePhoto'
+import { CardioFormModal } from '../components/training/CardioFormModal'
+import { deleteCardioSession } from '../lib/repositories'
+import { activityDisplayName, INTENSITY_LABELS } from '../lib/cardio'
 
 function normalize(text: string): string {
   return text
@@ -59,16 +64,21 @@ export function TrainingPage() {
   const { data: workoutExercisesData } = useWorkoutExercises()
   const { data: setsData } = useSets()
   const { data: exercisesData } = useExercises()
+  const { data: cardioData } = useCardioSessions()
 
   const workouts = workoutsData ?? []
   const workoutExercises = workoutExercisesData ?? []
   const sets = setsData ?? []
   const exercises = exercisesData ?? []
+  const cardioSessions = cardioData ?? []
 
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
   const [exerciseModalOpen, setExerciseModalOpen] = useState(false)
   const [editingExercise, setEditingExercise] = useState<Exercise | undefined>(undefined)
   const [deletingExercise, setDeletingExercise] = useState<Exercise | undefined>(undefined)
+  const [cardioModalOpen, setCardioModalOpen] = useState(false)
+  const [editingCardio, setEditingCardio] = useState<CardioSession | undefined>(undefined)
+  const [deletingCardio, setDeletingCardio] = useState<CardioSession | undefined>(undefined)
   const [exerciseSearch, setExerciseSearch] = useState('')
   const [exerciseGroup, setExerciseGroup] = useState<MuscleGroup | ''>('')
   const [historySearch, setHistorySearch] = useState('')
@@ -162,6 +172,17 @@ export function TrainingPage() {
     }
   }
 
+  const handleDeleteCardio = async () => {
+    if (!deletingCardio) return
+    try {
+      await deleteCardioSession(deletingCardio.id)
+      notify('Actividad eliminada')
+      setDeletingCardio(undefined)
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'No se pudo eliminar la actividad', 'error')
+    }
+  }
+
   const renderWorkoutCard = (workout: Workout) => {
     const stats = statsByWorkout.get(workout.id) ?? workoutStats([])
     const duration =
@@ -218,9 +239,14 @@ export function TrainingPage() {
         title="Entrenamiento"
         subtitle="Registra cada serie con su peso y repeticiones. El volumen y las series efectivas se calculan solos."
         actions={
-          <Button size="sm" onClick={() => setWorkoutModalOpen(true)}>
-            <Plus className="h-4 w-4" /> Nueva sesión
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => { setEditingCardio(undefined); setCardioModalOpen(true) }}>
+              <HeartPulse className="h-4 w-4" /> Cardio / deporte
+            </Button>
+            <Button size="sm" onClick={() => setWorkoutModalOpen(true)}>
+              <Plus className="h-4 w-4" /> Nueva sesión
+            </Button>
+          </div>
         }
       />
 
@@ -276,9 +302,9 @@ export function TrainingPage() {
               <div className="rounded-xl border border-line bg-raised/60 p-2.5">
                 <p className="text-[9px] uppercase tracking-wide text-faint">Duración media</p>
                 <p className="mt-1 font-display text-2xl font-semibold leading-none tabular text-fg">
-                  {weekSummary.avgMinutes > 0 ? weekSummary.avgMinutes : '—'}
+                  {weekSummary.avgMinutes > 0 ? (weekSummary.avgMinutes / 60).toFixed(1).replace('.', ',') : '—'}
                 </p>
-                <p className="text-[9px] text-faint">minutos</p>
+                <p className="text-[9px] text-faint">horas</p>
               </div>
             </div>
           </section>
@@ -304,6 +330,56 @@ export function TrainingPage() {
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
                 {selectedWorkouts.map(renderWorkoutCard)}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <div className="mb-2.5 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-fg">Actividades cardio y deportes del día</h2>
+              <span className="text-[10px] text-faint">{formatShortEs(selectedDate)}</span>
+            </div>
+            {cardioSessions.filter((c) => c.date === selectedDate).length === 0 ? (
+              <div className="card">
+                <EmptyState
+                  icon={<HeartPulse className="h-5 w-5" />}
+                  title="Sin actividades para este día"
+                  description="Registra cardio, carrera, pádel u otros deportes para esta fecha."
+                  action={
+                    <Button size="sm" onClick={() => { setEditingCardio(undefined); setCardioModalOpen(true) }}>
+                      <Plus className="h-4 w-4" /> Añadir actividad
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {cardioSessions
+                  .filter((c) => c.date === selectedDate)
+                  .map((session) => (
+                    <article key={session.id} className="card p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold text-fg">{activityDisplayName(session)}</h3>
+                          <p className="mt-0.5 text-[10px] text-faint">
+                            {formatDuration(session.durationMin)}
+                            {session.distanceKm ? ` · ${session.distanceKm} km` : ''}
+                            {session.avgSpeedKmh ? ` · ${session.avgSpeedKmh} km/h` : ''}
+                          </p>
+                        </div>
+                        <span className="chip">{INTENSITY_LABELS[session.intensity]}</span>
+                      </div>
+                      {session.notes ? <p className="mt-2 line-clamp-2 text-[11px] text-muted">{session.notes}</p> : null}
+                      <div className="mt-3 flex justify-end gap-1.5">
+                        <button type="button" onClick={() => { setEditingCardio(session); setCardioModalOpen(true) }} className="btn-icon h-8 w-8" aria-label={`Editar ${activityDisplayName(session)}`}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" onClick={() => setDeletingCardio(session)} className="btn-icon h-8 w-8 hover:text-rose-400" aria-label={`Eliminar ${activityDisplayName(session)}`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </article>
+                  ))}
               </div>
             )}
           </section>
@@ -523,6 +599,22 @@ export function TrainingPage() {
         danger
         onConfirm={handleDeleteExercise}
         onClose={() => setDeletingExercise(undefined)}
+      />
+      <CardioFormModal
+        open={cardioModalOpen}
+        session={editingCardio}
+        defaultDate={selectedDate}
+        onClose={() => { setCardioModalOpen(false); setEditingCardio(undefined) }}
+        onSaved={() => { /* refresh handled by hook */ }}
+      />
+      <ConfirmDialog
+        open={Boolean(deletingCardio)}
+        title="Eliminar actividad"
+        message={`¿Quieres eliminar «${deletingCardio ? activityDisplayName(deletingCardio) : ''}»?`}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={handleDeleteCardio}
+        onClose={() => setDeletingCardio(undefined)}
       />
     </div>
   )

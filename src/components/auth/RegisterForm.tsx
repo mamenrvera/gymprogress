@@ -155,14 +155,6 @@ export function RegisterForm() {
         {errors.confirmPassword && <p className="field-error">{errors.confirmPassword.message}</p>}
       </div>
 
-      <p className="text-xs text-faint">
-        Al crear tu cuenta, aceptas nuestros{' '}
-        <a href="#" className="text-accent hover:underline">Términos de uso</a>
-        {' '}y{' '}
-        <a href="#" className="text-accent hover:underline">Política de privacidad</a>
-        .
-      </p>
-
       <Button type="submit" className="w-full" loading={isSubmitting || status === 'loading'} disabled={status === 'loading'}>
         <span className="flex items-center justify-center gap-2">
           Crear cuenta

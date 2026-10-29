@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -26,10 +26,10 @@ import { SetRow } from '../components/training/SetRow'
 import { addExerciseToWorkout, addSet, deleteSet, deleteWorkout, removeWorkoutExercise, setWorkoutStatus, updateSet } from '../lib/repositories'
 import { epley1RM, workoutStats } from '../lib/calculations'
 import {
-  formatDuration,
+  formatDurationLong,
   formatLongEs,
   formatShortEs,
-  minutesBetween,
+  formatStopwatch,
 } from '../lib/dates'
 import { formatNumber } from '../lib/format'
 import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
@@ -87,16 +87,28 @@ export function WorkoutEditorPage() {
   const [deletingWorkout, setDeletingWorkout] = useState(false)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [statusPending, setStatusPending] = useState(false)
+  const [now, setNow] = useState(Date.now())
 
   const allWorkouts = workoutsData ?? []
   const allWorkoutExercises = workoutExercisesData ?? []
   const allSets = setsData ?? []
 
+  // Cronómetro en tiempo real para sesiones en curso (basado en marcas de tiempo reales).
+  useEffect(() => {
+    if (workout?.status !== 'in_progress' || !workout.startedAt) return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [workout?.status, workout?.startedAt])
+
   const workoutMap = useMemo(() => new Map(allWorkouts.map((item) => [item.id, item])), [allWorkouts])
 
   const stats = workoutStats(sets, workoutExercises.length)
-  const duration =
-    workout?.startedAt && workout.finishedAt ? minutesBetween(workout.startedAt, workout.finishedAt) : 0
+  const elapsedSec =
+    workout?.status === 'in_progress' && workout.startedAt
+      ? Math.max(0, Math.floor((now - new Date(workout.startedAt).getTime()) / 1000))
+      : workout?.startedAt && workout.finishedAt
+        ? Math.max(0, Math.floor((new Date(workout.finishedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000))
+        : 0
 
   const getPrevious = (exercise: WorkoutExercise): PreviousPerformance | null => {
     if (!workout) return null
@@ -207,7 +219,7 @@ export function WorkoutEditorPage() {
     try {
       await setWorkoutStatus(workout.id, status)
       if (status === 'completed') {
-        notify('Sesión completada. Buen trabajo.')
+        notify(`Entrenamiento completado: ${formatDurationLong(elapsedSec)}`)
         navigate('/entrenamiento')
       } else if (status === 'in_progress') {
         notify(workout.status === 'completed' ? 'Sesión reabierta' : 'Sesión iniciada. ¡A entrenar!')
@@ -325,8 +337,10 @@ export function WorkoutEditorPage() {
             <p className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-faint">
               <Clock className="h-3 w-3" /> Duración
             </p>
-            <p className="mt-1 font-display text-xl font-semibold leading-none text-fg">
-              {duration > 0 ? formatDuration(duration) : '—'}
+            <p className="mt-1 font-display text-xl font-semibold leading-none text-fg tabular-nums">
+              {workout.status === 'in_progress' && workout.startedAt
+                ? formatStopwatch(elapsedSec)
+                : (elapsedSec > 0 ? formatDurationLong(elapsedSec) : '—')}
             </p>
           </div>
           <div className="rounded-xl border border-line bg-raised/60 px-3 py-2.5">

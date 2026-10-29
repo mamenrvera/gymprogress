@@ -29,6 +29,7 @@ import { formatGrams, formatKcal, formatKg, formatNumber, formatPercent, formatS
 import { setWorkoutStatus } from '../lib/repositories'
 import { cn } from '../lib/cn'
 import { useEntries, useWorkouts, useWorkoutExercises, useSets, useBodyWeights } from '../hooks/useSupabaseData'
+import { scoreFood, scoreDay, dailyScoreLabel } from '../lib/nutritionScore'
 
 const STATUS_LABEL: Record<Workout['status'], string> = {
   planned: 'Planificada',
@@ -75,6 +76,22 @@ export function HomePage() {
   }, [allSets, workoutIds])
 
   const totals = useMemo(() => sumEntries(allEntries), [allEntries])
+
+  const dailyScore = useMemo(() => {
+    const dailyEntries = allEntries.map((e) => ({
+      foodName: e.foodName,
+      grams: e.grams,
+      per100: e.per100,
+      foodScore: scoreFood({ per100: e.per100 }).score,
+    }))
+    return scoreDay({
+      entries: dailyEntries,
+      targets: settings?.targets
+        ? { calories: settings.targets.calories, protein: settings.targets.protein, carbs: settings.targets.carbs, fat: settings.targets.fat }
+        : { calories: 2000, protein: 150, carbs: 200, fat: 70 },
+      date: selectedDate,
+    })
+  }, [allEntries, settings, selectedDate])
   const calories = progressValue(totals.calories, settings?.targets.calories ?? 0)
   const weightSummary = useMemo(() => bodyWeightSummary(allBodyWeights), [allBodyWeights])
   const latestWeight = weightSummary.latest
@@ -309,6 +326,41 @@ export function HomePage() {
           <MacroRing label="Carbohidratos" consumed={totals.carbs} target={settings.targets.carbs} color="#c084fc" />
         </div>
       </section>
+
+      {dailyScore.isEmpty ? (
+        <section className="card p-4">
+          <p className="text-xs text-muted">Registra tus comidas para evaluar tu alimentación.</p>
+        </section>
+      ) : (
+        <section className="card p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-fg">Calidad de alimentación de hoy</p>
+            <span className="chip">{dailyScore.score.toFixed(1)}/10 · {dailyScoreLabel(dailyScore.score)}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-gradient-to-r from-rose-500 via-amber-500 to-emerald-500">
+            <div
+              className="h-full bg-surface/0"
+              style={{ width: `${(dailyScore.score / 10) * 100}%`, boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.3)' }}
+            />
+          </div>
+          <div className="relative h-1 -mt-2">
+            <div
+              className="absolute top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-surface bg-fg"
+              style={{ left: `${(dailyScore.score / 10) * 100}%` }}
+            />
+          </div>
+          {dailyScore.provisional && <p className="text-[10px] text-amber-400">Puntuación provisional</p>}
+          {dailyScore.strengths.length > 0 && (
+            <p className="text-xs text-muted">✓ {dailyScore.strengths[0]}</p>
+          )}
+          {dailyScore.improvements.length > 0 && (
+            <p className="text-xs text-muted">↑ {dailyScore.improvements[0]}</p>
+          )}
+          {dailyScore.tips.length > 0 && (
+            <p className="text-[10px] text-faint">{dailyScore.tips[0]}</p>
+          )}
+        </section>
+      )}
 
       <MacroEnergyNotice targets={settings.targets} compact className="hidden sm:flex" />
 

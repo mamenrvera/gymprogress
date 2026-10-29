@@ -9,6 +9,8 @@ import {
   fetchSetsFromSupabase,
   fetchBodyWeightsFromSupabase,
   fetchSettingsFromSupabase,
+  fetchMealBlocksFromSupabase,
+  fetchCardioSessionsFromSupabase,
 } from '../lib/supabase-data'
 import type {
   Food,
@@ -20,6 +22,7 @@ import type {
   BodyWeight,
   Settings,
 } from '../types'
+import type { CardioSession } from '../lib/cardio'
 
 // ============================================================
 // GENERIC HOOK: Fetch data from Supabase with loading/error states
@@ -143,11 +146,30 @@ export function useBodyWeights(): UseQueryResult<BodyWeight[]> {
   return useSupabaseQuery(fetcher, [])
 }
 
+export function useMealBlocks(date?: string): UseQueryResult<import('../types').MealBlock[]> {
+  const fetcher = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    const blocks = await fetchMealBlocksFromSupabase(user.id, date)
+    return blocks
+  }, [date])
+  return useSupabaseQuery(fetcher, [date])
+}
+
 export function useSettings(): UseQueryResult<Settings | null> {
   const fetcher = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
     return fetchSettingsFromSupabase(user.id)
+  }, [])
+  return useSupabaseQuery(fetcher, [])
+}
+
+export function useCardioSessions(): UseQueryResult<CardioSession[]> {
+  const fetcher = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+    return fetchCardioSessionsFromSupabase(user.id)
   }, [])
   return useSupabaseQuery(fetcher, [])
 }

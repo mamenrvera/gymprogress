@@ -65,6 +65,7 @@ export function NutritionPage() {
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set())
   const [mealSelectorOpen, setMealSelectorOpen] = useState(false)
   const [deletingBlock, setDeletingBlock] = useState<import('../types').MealBlock | null>(null)
+  const [finalizingBlockId, setFinalizingBlockId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!searchParams.get('add')) return
@@ -163,6 +164,44 @@ export function NutritionPage() {
       notify('Comida eliminada')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudo eliminar la comida', 'error')
+    }
+  }
+
+  const handleFinalizeBlock = async (block: import('../types').MealBlock) => {
+    const blockEntries = entries.filter((e) => e.mealBlockId === block.id || (block.id.startsWith('legacy-') && e.meal === block.mealType && !e.mealBlockId))
+    if (blockEntries.length === 0) {
+      notify('No puedes finalizar una comida vacía', 'error')
+      return
+    }
+    setFinalizingBlockId(block.id)
+    try {
+      const { finalizeMealBlock } = await import('../lib/repositories')
+      const result = await finalizeMealBlock(block, blockEntries)
+      console.log('[NutritionPage] Meal finalized:', result.id, 'score:', result.qualityScore)
+      void refetchMealBlocks()
+      notify('Comida finalizada')
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'No se pudo finalizar la comida'
+      console.error('[NutritionPage] handleFinalizeBlock error:', msg, error)
+      notify(msg, 'error')
+    } finally {
+      setFinalizingBlockId(null)
+    }
+  }
+
+  // Invalidar puntuación si se modifica una comida finalizada
+  const invalidateIfFinalized = async (blockId: string | undefined) => {
+    if (!blockId || blockId.startsWith('legacy-')) return
+    const block = mealBlocks.find((b) => b.id === blockId)
+    if (block?.finishedAt) {
+      try {
+        const { invalidateMealBlock } = await import('../lib/repositories')
+        await invalidateMealBlock(block)
+        void refetchMealBlocks()
+        notify('La comida se ha modificado. Su puntuación anterior se ha invalidado; vuelve a finalizarla.', 'info')
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -309,10 +348,13 @@ export function NutritionPage() {
                     try {
                       await (await import('../lib/supabase')).getSupabaseClient().from('entries').delete().eq('id', entry.id)
                       void refetchEntries()
+                      await invalidateIfFinalized(block.id.startsWith('legacy-') ? undefined : block.id)
                     } catch {
                       notify('No se pudo eliminar el alimento', 'error')
                     }
                   }}
+                  onFinalize={() => void handleFinalizeBlock(block)}
+                  finalizing={finalizingBlockId === block.id}
                   onDeleteBlock={() => setDeletingBlock(block)}
                 />
               ))
@@ -452,6 +494,7 @@ export function NutritionPage() {
         initialFoodId={initialFoodId}
         onAdded={() => {
           void refetchEntries()
+          void invalidateIfFinalized(addMealBlockId)
         }}
       />
 
@@ -492,8 +535,10 @@ export function NutritionPage() {
         entry={editingEntry}
         open={Boolean(editingEntry)}
         onClose={() => {
+          const bid = editingEntry?.mealBlockId
           setEditingEntryId(null)
           void refetchEntries()
+          void invalidateIfFinalized(bid)
         }}
       />
       <ConfirmDialog

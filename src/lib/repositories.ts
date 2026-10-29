@@ -151,6 +151,64 @@ export async function deleteMealBlock(id: string): Promise<void> {
   await deleteMealBlockFromSupabase(id, userId)
 }
 
+export async function finalizeMealBlock(block: import('../types').MealBlock, entries: import('../types').FoodEntry[]): Promise<import('../types').MealBlock> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+
+  let score: { score: number }
+  try {
+    const { scoreMeal } = await import('./nutritionScore')
+    const { scoreFood } = await import('./nutritionScore')
+    score = scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
+  } catch (e) {
+    console.error('[Repo] Error calculating meal score:', e)
+    throw new Error('Error al calcular la puntuación de la comida.')
+  }
+
+  const updated: import('../types').MealBlock = {
+    ...block,
+    finishedAt: new Date().toISOString(),
+    qualityScore: score.score,
+    qualityVersion: 1,
+    updatedAt: new Date().toISOString(),
+  }
+
+  try {
+    const { upsertMealBlockToSupabase } = await import('./supabase-data')
+    await upsertMealBlockToSupabase(updated, userId)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error al guardar en Supabase'
+    console.error('[Repo] finalizeMealBlock Supabase error:', msg, e)
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('column')) {
+      throw new Error('La tabla de comidas no tiene las columnas necesarias. Ejecuta las migraciones 017 y 018 en Supabase SQL Editor.')
+    }
+    throw new Error(`No se pudo guardar: ${msg}`)
+  }
+
+  return updated
+}
+
+export async function invalidateMealBlock(block: import('../types').MealBlock): Promise<import('../types').MealBlock> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const updated: import('../types').MealBlock = {
+    ...block,
+    finishedAt: undefined,
+    qualityScore: undefined,
+    qualityVersion: undefined,
+    updatedAt: new Date().toISOString(),
+  }
+  try {
+    const { upsertMealBlockToSupabase } = await import('./supabase-data')
+    await upsertMealBlockToSupabase(updated, userId)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error al invalidar'
+    console.error('[Repo] invalidateMealBlock error:', msg, e)
+    // Don't throw - invalidation is best-effort
+  }
+  return updated
+}
+
 // ——— Registro de comidas ———
 export async function addFoodEntry(params: {
   food: Food

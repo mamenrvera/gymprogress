@@ -135,6 +135,9 @@ export interface MealBlock {
   date: string
   mealType: MealType
   title?: string
+  finishedAt?: string
+  qualityScore?: number
+  qualityVersion?: number
   createdAt: string
   updatedAt: string
 }

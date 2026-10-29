@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
 import type { FoodEntry, MealBlock, MealType } from '../../types'
 import { sumEntries } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
+import { scoreFood, scoreMeal, dailyScoreLabel } from '../../lib/nutritionScore'
 import { Button } from '../ui/Button'
 
 const MEAL_LABELS: Record<MealType, string> = {
@@ -31,12 +32,16 @@ interface Props {
   onEditEntry: (entry: FoodEntry) => void
   onDeleteEntry: (entry: FoodEntry) => void
   onDeleteBlock: () => void
+  onFinalize: () => void
+  finalizing?: boolean
 }
 
-export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock }: Props) {
+export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock, onFinalize, finalizing }: Props) {
   const totals = sumEntries(entries)
   const label = block.title || MEAL_LABELS[block.mealType]
   const time = new Date(block.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  const finalized = !!block.finishedAt && block.qualityScore != null
+  const mealScore = finalized ? null : scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
 
   return (
     <section className="card overflow-hidden">
@@ -54,6 +59,9 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
             <p className="shrink-0 text-xs font-semibold tabular text-fg">
               {formatKcal(totals.calories)} <span className="font-normal text-faint">kcal</span>
             </p>
+            {finalized && block.qualityScore != null ? (
+              <span className="chip shrink-0">{block.qualityScore.toFixed(1)}/10</span>
+            ) : null}
           </div>
           <p className="mt-0.5 text-[10px] tabular text-faint">
             <Clock className="inline h-3 w-3 mr-1" />
@@ -106,6 +114,42 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
                 </li>
               ))}
             </ul>
+          )}
+
+          {finalized && block.qualityScore != null ? (
+            <div className="border-t border-line px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-fg">Finalizada · {block.qualityScore.toFixed(1)}/10</p>
+                <span className="chip">{dailyScoreLabel(block.qualityScore)}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gradient-to-r from-rose-500 via-amber-500 to-emerald-500 relative">
+                <div
+                  className="absolute inset-y-0 left-0 bg-surface/0"
+                  style={{ width: `${(block.qualityScore / 10) * 100}%`, boxShadow: 'inset -2px 0 0 0 rgba(0,0,0,0.4)' }}
+                />
+              </div>
+              <div className="relative h-1 -mt-3">
+                <div
+                  className="absolute top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-surface bg-fg"
+                  style={{ left: `${(block.qualityScore / 10) * 100}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="border-t border-line px-4 py-2.5 flex items-center justify-between gap-2">
+              <p className="text-[10px] text-faint">
+                {entries.length === 0 ? 'Añade alimentos y finaliza la comida.' : `Puntuación estimada: ${mealScore?.score.toFixed(1) ?? '—'}/10`}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onFinalize}
+                loading={finalizing}
+                disabled={entries.length === 0 || finalizing}
+              >
+                Finalizar comida
+              </Button>
+            </div>
           )}
 
           <div className="flex items-center justify-between border-t border-line px-4 py-2.5">

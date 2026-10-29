@@ -646,13 +646,33 @@ export async function fetchMealBlocksFromSupabase(userId: string, date?: string)
     date: row.date as string,
     mealType: row.meal_type as import('../types').MealType,
     title: row.title as string | undefined,
+    finishedAt: row.finished_at as string | undefined,
+    qualityScore: row.quality_score as number | undefined,
+    qualityVersion: row.quality_version as number | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }))
 }
 
 export async function upsertMealBlockToSupabase(block: import('../types').MealBlock, userId: string): Promise<void> {
-  const { error } = await (supabase as any).from('meal_blocks').upsert({
+  // Build payload with only the columns that should be included.
+  // If the migration 018 hasn't been applied, the extra columns (finished_at,
+  // quality_score, quality_version) won't exist and Supabase will reject them.
+  // We try with all columns first, then fall back to base columns.
+  const fullPayload = {
+    id: block.id,
+    user_id: userId,
+    date: block.date,
+    meal_type: block.mealType,
+    title: block.title,
+    finished_at: block.finishedAt,
+    quality_score: block.qualityScore,
+    quality_version: block.qualityVersion,
+    created_at: block.createdAt,
+    updated_at: block.updatedAt,
+  }
+
+  const basePayload = {
     id: block.id,
     user_id: userId,
     date: block.date,
@@ -660,8 +680,37 @@ export async function upsertMealBlockToSupabase(block: import('../types').MealBl
     title: block.title,
     created_at: block.createdAt,
     updated_at: block.updatedAt,
-  }, { onConflict: 'id' })
-  if (error) throw error
+  }
+
+  // Try with all columns first
+  const { error: fullError } = await (supabase as any)
+    .from('meal_blocks')
+    .upsert(fullPayload, { onConflict: 'id' })
+
+  if (!fullError) return
+
+  // If the error is about missing columns, retry with base payload
+  const msg = fullError.message || ''
+  if (msg.includes('column') && (msg.includes('does not exist') || msg.includes('finished_at') || msg.includes('quality_score') || msg.includes('quality_version'))) {
+    console.warn('[Supabase] Quality columns not found, saving base data only. Apply migration 018 to enable meal scoring.')
+    const { error: baseError } = await (supabase as any)
+      .from('meal_blocks')
+      .upsert(basePayload, { onConflict: 'id' })
+    if (baseError) {
+      console.error('[Supabase] Error upserting meal block (base):', baseError)
+      throw baseError
+    }
+    return
+  }
+
+  // If the table doesn't exist at all
+  if (msg.includes('relation') && msg.includes('does not exist')) {
+    console.error('[Supabase] meal_blocks table does not exist. Apply migration 017.')
+    throw new Error('La tabla de comidas no existe en Supabase. Ejecuta la migración 017 en SQL Editor.')
+  }
+
+  console.error('[Supabase] Error upserting meal block:', fullError)
+  throw fullError
 }
 
 export async function deleteMealBlockFromSupabase(id: string, userId: string): Promise<void> {

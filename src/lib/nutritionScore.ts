@@ -363,6 +363,130 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
 // COLOR BAR HELPERS
 // ============================================================
 
+// ============================================================
+// PUNTUACIÓN DE UNA COMIDA INDIVIDUAL (1-10)
+// ============================================================
+
+export interface MealScoreResult {
+  score: number // 1-10
+  provisional: boolean
+  confidence: 'high' | 'medium' | 'low'
+  components: {
+    foodQuality: number | null
+    macroBalance: number | null
+    proteinAdequacy: number | null
+    fiberVariety: number | null
+  }
+  strengths: string[]
+  improvements: string[]
+  tips: string[]
+  isEmpty: boolean
+}
+
+export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
+  if (entries.length === 0) {
+    return {
+      score: 0,
+      provisional: true,
+      confidence: 'low',
+      components: { foodQuality: null, macroBalance: null, proteinAdequacy: null, fiberVariety: null },
+      strengths: [],
+      improvements: [],
+      tips: [],
+      isEmpty: true,
+    }
+  }
+
+  const strengths: string[] = []
+  const improvements: string[] = []
+
+  const totals = entries.reduce(
+    (acc, e) => {
+      const factor = e.grams / 100
+      acc.calories += (e.per100.calories ?? 0) * factor
+      acc.protein += (e.per100.protein ?? 0) * factor
+      acc.carbs += (e.per100.carbs ?? 0) * factor
+      acc.fat += (e.per100.fat ?? 0) * factor
+      acc.fiber += (e.per100.fiber ?? 0) * factor
+      return acc
+    },
+    { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+  )
+
+  const foodScores = entries.map((e) => e.foodScore).filter((s): s is number => s !== undefined && s !== null)
+  const foodQuality = foodScores.length > 0 ? foodScores.reduce((a, b) => a + b, 0) / foodScores.length / 10 : null
+
+  let macroBalance: number | null = null
+  if (totals.calories > 0) {
+    const pPct = (totals.protein * 4 / totals.calories) * 100
+    const cPct = (totals.carbs * 4 / totals.calories) * 100
+    const fPct = (totals.fat * 9 / totals.calories) * 100
+    let score = 10
+    if (pPct < 10 || pPct > 40) score -= 2
+    if (cPct < 30 || cPct > 70) score -= 2
+    if (fPct < 15 || fPct > 45) score -= 2
+    macroBalance = Math.max(0, score)
+  }
+
+  // Protein adequacy (lighter weight for a meal, just presence)
+  let proteinAdequacy: number | null = null
+  if (totals.calories > 0) {
+    const pPct = (totals.protein * 4 / totals.calories) * 100
+    if (pPct >= 15) proteinAdequacy = 10
+    else if (pPct >= 10) proteinAdequacy = 7
+    else if (pPct >= 5) proteinAdequacy = 4
+    else proteinAdequacy = 2
+  }
+
+  const uniqueFoods = new Set(entries.map((e) => e.foodName.toLowerCase())).size
+  const fiberScore = totals.fiber >= 5 ? 10 : totals.fiber >= 2 ? 7 : totals.fiber >= 1 ? 4 : 2
+  const varietyScore = uniqueFoods >= 4 ? 10 : uniqueFoods >= 2 ? 7 : 4
+  const fiberVariety = (fiberScore + varietyScore) / 2
+
+  const components: { value: number; weight: number }[] = []
+  if (foodQuality !== null) components.push({ value: foodQuality, weight: 0.35 })
+  if (macroBalance !== null) components.push({ value: macroBalance, weight: 0.25 })
+  if (proteinAdequacy !== null) components.push({ value: proteinAdequacy, weight: 0.2 })
+  components.push({ value: fiberVariety, weight: 0.2 })
+
+  const totalWeight = components.reduce((s, c) => s + c.weight, 0)
+  const weightedSum = components.reduce((s, c) => s + c.value * c.weight, 0)
+  const rawScore = totalWeight > 0 ? weightedSum / totalWeight : 5
+  const score = Math.max(1, Math.min(10, Math.round(rawScore * 10) / 10))
+
+  const confidence: 'high' | 'medium' | 'low' =
+    foodScores.length >= entries.length * 0.8 ? 'high' :
+    foodScores.length >= entries.length * 0.4 ? 'medium' : 'low'
+
+  const provisional = entries.length < 2 || foodScores.length < entries.length
+
+  if (foodQuality !== null && foodQuality >= 7) strengths.push('Alimentos de buena calidad')
+  if (proteinAdequacy !== null && proteinAdequacy >= 7) strengths.push('Buen aporte de proteínas')
+  if (totals.fiber >= 3) strengths.push('Aporta fibra')
+  if (macroBalance !== null && macroBalance >= 7) strengths.push('Buen equilibrio de macros')
+
+  if (foodQuality !== null && foodQuality < 5) improvements.push('Mejora la calidad de los alimentos')
+  if (proteinAdequacy !== null && proteinAdequacy < 5) improvements.push('Aumenta el aporte de proteínas')
+  if (totals.fiber < 2) improvements.push('Añade fibra (fruta, verdura, legumbres)')
+  if (macroBalance !== null && macroBalance < 5) improvements.push('Mejora el equilibrio de macros')
+
+  const mealTips: string[] = []
+  if (totals.fiber < 2) mealTips.push('Añade una porción de fruta o verdura.')
+  if (proteinAdequacy !== null && proteinAdequacy < 7) mealTips.push('Incluye una fuente de proteína.')
+  if (mealTips.length === 0) mealTips.push('Comida bien compuesta.')
+
+  return {
+    score,
+    provisional,
+    confidence,
+    components: { foodQuality, macroBalance, proteinAdequacy, fiberVariety },
+    strengths,
+    improvements,
+    tips: mealTips,
+    isEmpty: false,
+  }
+}
+
 export function dailyScoreColor(score: number): string {
   if (score >= 7) return 'bg-emerald-500'
   if (score >= 5) return 'bg-amber-500'

@@ -88,7 +88,9 @@ export function ExercisePhotoUpload({ exerciseId, currentImageUrl, onImageChange
         // Revoke object URL
         URL.revokeObjectURL(objectUrl)
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Error al subir la imagen')
+        const msg = e instanceof Error ? e.message : 'Error al subir la imagen'
+        console.error('[ExercisePhotoUpload] Upload error:', msg, e)
+        setError(msg)
         setPreviewUrl(currentImageUrl ? null : null)
         URL.revokeObjectURL(objectUrl)
       } finally {
@@ -107,11 +109,21 @@ export function ExercisePhotoUpload({ exerciseId, currentImageUrl, onImageChange
       // currentImageUrl is now a storage path (e.g., "user-id/exercise-id.jpg")
       // not a URL, so we can use it directly
       if (currentImageUrl && !currentImageUrl.startsWith('blob:') && !currentImageUrl.startsWith('http')) {
-        await deleteExercisePhoto(currentImageUrl)
+        try {
+          await deleteExercisePhoto(currentImageUrl)
+        } catch (e) {
+          console.warn('[ExercisePhotoUpload] Could not delete old photo (may require admin permissions):', e)
+        }
       } else if (currentImageUrl && currentImageUrl.includes('exercise-photos/')) {
         // Legacy: extract path from URL
         const path = currentImageUrl.split('exercise-photos/')[1]
-        if (path) await deleteExercisePhoto(path)
+        if (path) {
+          try {
+            await deleteExercisePhoto(path)
+          } catch (e) {
+            console.warn('[ExercisePhotoUpload] Could not delete old photo (may require admin permissions):', e)
+          }
+        }
       }
       onImageChange(null)
       onFileSelect?.(null)

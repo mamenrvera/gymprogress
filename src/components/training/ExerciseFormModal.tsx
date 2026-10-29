@@ -78,7 +78,9 @@ export function ExerciseFormModal({ open, exercise, onClose, onSaved }: Exercise
         onClose()
       }
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'No se pudo guardar el ejercicio', 'error')
+      const msg = error instanceof Error ? error.message : 'No se pudo guardar el ejercicio'
+      console.error('[ExerciseFormModal] Error saving exercise:', msg, error)
+      notify(msg, 'error')
     }
   })
 

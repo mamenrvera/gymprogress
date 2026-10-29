@@ -181,14 +181,15 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
 
   const timestamp = nowISO()
   let exercise: Exercise
+  let existingUserId: string | undefined
   if (existingId) {
     // Fetch existing to preserve imageUrl if not changed
     const { data: existing } = await (await import('./supabase')).getSupabaseClient()
       .from('exercises')
-      .select('image_url, created_at')
+      .select('image_url, created_at, user_id')
       .eq('id', existingId)
-      .eq('user_id', userId)
       .single()
+    existingUserId = existing?.user_id as string | undefined
     exercise = {
       id: existingId,
       name: values.name,
@@ -222,7 +223,18 @@ export async function saveExercise(values: ExerciseFormValues, existingId?: stri
     }
   }
 
-  await upsertExerciseToSupabase(exercise, userId)
+  // Preserve original creator's user_id when editing (admin may edit others' exercises)
+  const ownerId = existingId ? existingUserId ?? userId : userId
+  try {
+    await upsertExerciseToSupabase(exercise, ownerId)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error al guardar el ejercicio'
+    console.error('[Repo] saveExercise error:', msg, e)
+    if (msg.includes('new row violates row-level security') || msg.includes('RLS') || msg.includes('permission')) {
+      throw new Error('No tienes permiso para modificar este ejercicio. Solo el administrador puede hacerlo.')
+    }
+    throw e
+  }
   return exercise
 }
 

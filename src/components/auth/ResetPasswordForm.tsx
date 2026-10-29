@@ -48,11 +48,21 @@ export function ResetPasswordForm() {
   const type = searchParams.get('type')
   const code = searchParams.get('code')
 
+  // Diagnóstico: registrar los parámetros recibidos
   useEffect(() => {
+    console.log('[ResetPassword] URL params:', { tokenHash: tokenHash ? '***' : null, type, code: code ? '***' : null })
+    console.log('[ResetPassword] Origin:', window.location.origin)
+    console.log('[ResetPassword] Full URL:', window.location.href)
+
     // Si no hay token_hash ni code, mostrar error
     if (!tokenHash && !code) {
       setErrorMessage('Enlace de recuperación no válido. Solicita uno nuevo desde la página de recuperación.')
       setStep('error')
+    }
+
+    // Detectar si se está accediendo desde localhost en producción
+    if (window.location.hostname === 'localhost' && (tokenHash || code)) {
+      console.warn('[ResetPassword] Accediendo desde localhost con token. El enlace debería apuntar a producción.')
     }
   }, [tokenHash, code])
 
@@ -207,6 +217,27 @@ export function ResetPasswordForm() {
         <p className="mt-2 text-sm text-muted">
           Estamos validando tu enlace de recuperación.
         </p>
+      </div>
+    )
+  }
+
+  // Advertencia: acceso desde localhost con token (el enlace debería apuntar a producción)
+  if (window.location.hostname === 'localhost' && (tokenHash || code)) {
+    return (
+      <div className="text-center py-8">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
+          <Lock className="h-8 w-8 text-amber-500" />
+        </div>
+        <h2 className="font-display text-xl font-semibold text-fg">Enlace de desarrollo</h2>
+        <p className="mt-2 text-sm text-muted">
+          Estás accediendo desde localhost. El enlace de recuperación debería apuntar a la aplicación en producción.
+        </p>
+        <p className="mt-2 text-xs text-faint">
+          Si estás probando en desarrollo, cambia la URL a: https://gymprogress-seven.vercel.app/reset-password?token_hash=...&amp;type=recovery
+        </p>
+        <Button variant="secondary" className="mt-6" onClick={() => navigate('/recuperar')}>
+          Solicitar nuevo enlace
+        </Button>
       </div>
     )
   }

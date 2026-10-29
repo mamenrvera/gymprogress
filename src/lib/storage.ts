@@ -41,6 +41,9 @@ export async function uploadExercisePhoto(
     if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
       throw new Error('El bucket de almacenamiento no existe. Ejecuta la migración 004 en Supabase SQL Editor para crearlo.')
     }
+    if (uploadError.message?.includes('new row violates row-level security') || uploadError.message?.includes('RLS')) {
+      throw new Error('No tienes permiso para subir fotos a esta ruta. Verifica las políticas de Storage en Supabase.')
+    }
     throw uploadError
   }
 
@@ -52,7 +55,12 @@ export async function deleteExercisePhoto(path: string): Promise<void> {
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
     .remove([path])
-  if (error) throw error
+  if (error) {
+    if (error.message?.includes('new row violates row-level security') || error.message?.includes('RLS')) {
+      throw new Error('No tienes permiso para eliminar esta foto. Solo el administrador puede hacerlo.')
+    }
+    throw error
+  }
 }
 
 export async function createSignedUrl(path: string, expiresIn: number = SIGNED_URL_EXPIRY): Promise<string | null> {

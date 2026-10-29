@@ -158,7 +158,24 @@ export async function fetchExercisesFromSupabase(): Promise<Exercise[]> {
     .from('exercises')
     .select('*')
     .order('name')
-  if (error) throw error
+  if (error) {
+    console.error('[Supabase] Error fetching exercises:', error)
+    throw error
+  }
+  const count = (data || []).length
+  console.log('[Supabase] Fetched', count, 'exercises (shared catalog)')
+  if (count === 0) {
+    console.warn('[Supabase] WARNING: No exercises returned. The RLS policy "exercises_all_own" (FOR ALL, user_id = current_user_id()) from migration 002 is likely still active in Supabase. This policy restricts SELECT to only the creator. Apply migration 011_ensure_shared_exercise_catalog.sql in Supabase SQL Editor to fix.')
+  } else {
+    // Diagnostic: check if any exercises were created by other users
+    const currentUserId = (await supabase.auth.getUser()).data.user?.id
+    const otherUsersExercises = (data || []).filter((row: Record<string, unknown>) => row.user_id !== currentUserId)
+    if (otherUsersExercises.length > 0) {
+      console.log('[Supabase] Shared catalog working: found', otherUsersExercises.length, 'exercises from other users')
+    } else if (count > 0) {
+      console.log('[Supabase] All', count, 'exercises belong to current user. Either no other users have created exercises, or RLS is still filtering.')
+    }
+  }
   return (data || []).map((row: Record<string, unknown>) => ({
     id: row.id as string,
     name: row.name as string,

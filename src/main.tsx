@@ -33,12 +33,31 @@ async function bootstrap() {
 
     // Recargar la página cuando un nuevo service worker toma el control,
     // pero solo si ya había uno anterior (actualización, no primera instalación).
+    // Evita recargar si el usuario está escribiendo en un formulario.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (refreshing) return
-      if (hadController) {
-        refreshing = true
-        window.location.reload()
+      if (!hadController) return
+      const active = document.activeElement
+      const isEditing =
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement
+      if (isEditing) {
+        // Defer reload until the input loses focus
+        const onDone = () => {
+          if (refreshing) return
+          refreshing = true
+          window.location.reload()
+        }
+        active?.addEventListener('blur', onDone, { once: true })
+        // Fallback: reload after 5 minutes if still editing
+        setTimeout(() => {
+          if (!refreshing) onDone()
+        }, 5 * 60 * 1000)
+        return
       }
+      refreshing = true
+      window.location.reload()
     })
 
     registerSW({

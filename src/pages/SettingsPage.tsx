@@ -66,6 +66,8 @@ export function SettingsPage() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [storage, setStorage] = useState<StorageInfo>({})
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle')
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null)
   const [installed, setInstalled] = useState(() => {
     if (typeof window === 'undefined') return false
     const standalone = window.matchMedia('(display-mode: standalone)').matches
@@ -219,6 +221,52 @@ export function SettingsPage() {
     } catch {
       notify('No se pudo iniciar la instalación', 'error')
     }
+  }
+
+  const checkForUpdates = async () => {
+    setUpdateStatus('checking')
+    setUpdateMessage(null)
+    try {
+      if (!('serviceWorker' in navigator)) {
+        setUpdateStatus('error')
+        setUpdateMessage('Tu navegador no soporta Service Workers.')
+        return
+      }
+      const registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        setUpdateStatus('error')
+        setUpdateMessage('No hay Service Worker registrado. La app puede estar en modo desarrollo.')
+        return
+      }
+      await registration.update()
+      // Give the browser a moment to process
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      if (registration.waiting) {
+        setUpdateStatus('available')
+        setUpdateMessage('Hay una nueva versión disponible. Pulsa "Actualizar ahora" para aplicarla.')
+      } else if (registration.installing) {
+        setUpdateStatus('checking')
+        setUpdateMessage('Se está instalando una nueva versión...')
+      } else {
+        setUpdateStatus('up-to-date')
+        setUpdateMessage('Ya tienes la última versión instalada.')
+      }
+    } catch (e) {
+      console.error('[PWA] Error checking for updates:', e)
+      setUpdateStatus('error')
+      setUpdateMessage('No se pudo comprobar. Revisa tu conexión.')
+    }
+  }
+
+  const applyUpdate = () => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+        }
+      })
+    }
+    window.location.reload()
   }
 
   if (!settings) {
@@ -660,8 +708,51 @@ export function SettingsPage() {
             </p>
           </section>
 
+          <section className="card-pad">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-lime-400/10 text-accent">
+                <RotateCcw className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-fg">Actualizaciones</h2>
+                <p className="text-[10px] text-faint">Versión instalada: {import.meta.env.VITE_APP_VERSION || '1.0.0'}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void checkForUpdates()}
+                loading={updateStatus === 'checking'}
+                disabled={updateStatus === 'checking'}
+                className="w-full"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Comprobar actualizaciones
+              </Button>
+              {updateMessage ? (
+                <p
+                  className={cn(
+                    'rounded-lg border px-2.5 py-2 text-[10px] leading-relaxed',
+                    updateStatus === 'available'
+                      ? 'border-lime-500/30 bg-lime-400/10 text-accent'
+                      : updateStatus === 'error'
+                        ? 'border-rose-500/25 bg-rose-500/10 text-rose-400'
+                        : 'border-line bg-raised/50 text-faint',
+                  )}
+                >
+                  {updateMessage}
+                </p>
+              ) : null}
+              {updateStatus === 'available' ? (
+                <Button size="sm" className="w-full" onClick={applyUpdate}>
+                  Actualizar ahora
+                </Button>
+              ) : null}
+            </div>
+          </section>
+
           <p className="px-1 text-[10px] leading-relaxed text-faint">
-            GymProgress · versión 1.0 · React + Supabase · Datos sincronizados en la nube.
+            GymProgress · versión {import.meta.env.VITE_APP_VERSION || '1.0.0'} · React + Supabase · Datos sincronizados en la nube.
           </p>
         </aside>
       </div>

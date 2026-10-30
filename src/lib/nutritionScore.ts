@@ -39,6 +39,7 @@ export interface FoodScoreResult {
 // Nutri-Score negative points thresholds (per 100g), for kcal (energy)
 const ENERGY_THRESHOLDS_KCAL = [80, 160, 240, 320, 400, 480, 560, 640, 720, 800]
 const SUGAR_THRESHOLDS = [4.5, 9, 13.5, 18, 22.5, 27, 31.5, 36, 40.5, 45]
+const SATFAT_THRESHOLDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const SALT_THRESHOLDS = [0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]
 
 // Positive points thresholds
@@ -105,14 +106,22 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
   const carbs = per100.carbs ?? 0
   const fat = per100.fat ?? 0
   const fiber = per100.fiber ?? 0
-  const salt = (per100 as any).salt ?? 0
+  const sugars = per100.sugars ?? null
+  const saturatedFat = per100.saturatedFat ?? null
+  const salt = per100.salt ?? null
+
+  // Track missing data
+  if (sugars === null) missing.push('Azúcares')
+  if (saturatedFat === null) missing.push('Grasas saturadas')
+  if (salt === null) missing.push('Sal')
 
   // Negative points
   const energyPts = negativePoints(calories, ENERGY_THRESHOLDS_KCAL)
-  const sugarPts = negativePoints(per100.carbs ? carbs : 0, SUGAR_THRESHOLDS) // simplified: use carbs as proxy? No, use sugars if available
-  // Actually we don't store sugars separately in NutritionPer100... check
-  const satFatPts = 0 // we don't store saturated fat in NutritionPer100
-  const saltPts = negativePoints(salt, SALT_THRESHOLDS)
+  // Use sugars if available, otherwise use a fraction of carbs as estimate (not all carbs are sugar)
+  const sugarValue = sugars !== null ? sugars : carbs * 0.1 // conservative estimate: 10% of carbs are sugars
+  const sugarPts = negativePoints(sugarValue, SUGAR_THRESHOLDS)
+  const satFatPts = saturatedFat !== null ? negativePoints(saturatedFat, SATFAT_THRESHOLDS) : 0
+  const saltPts = salt !== null ? negativePoints(salt, SALT_THRESHOLDS) : 0
 
   // Positive points
   const fiberPts = positivePoints(fiber, FIBER_THRESHOLDS)
@@ -120,15 +129,15 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
   const negativeTotal = energyPts + sugarPts + satFatPts + saltPts
   const proteinPts = negativeTotal < 11 ? positivePoints(protein, PROTEIN_THRESHOLDS) : 0
 
-  // Category bonus (healthy foods)
+  // Category bonus (healthy foods) — reduced to avoid over-scoring
   let categoryBonus = 0
   if (category && HEALTHY_CATEGORIES.includes(category)) {
-    categoryBonus = 5
+    categoryBonus = 3
   }
-  // Name-based heuristic for nuts/oil/avocado
+  // Name-based heuristic for nuts/oil/avocado — reduced to avoid over-scoring
   const nameLower = (name || '').toLowerCase()
   if (/nuez|almendra|cacahuete|avellana|pistacho|anacardo|aceite|aguacate|oliva/i.test(nameLower)) {
-    categoryBonus = Math.max(categoryBonus, 5)
+    categoryBonus = Math.max(categoryBonus, 3)
   }
 
   const positiveTotal = fiberPts + proteinPts + categoryBonus

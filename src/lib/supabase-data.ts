@@ -38,12 +38,19 @@ export async function fetchFoodsFromSupabase(userId: string): Promise<Food[]> {
     brand: row.brand as string | undefined,
     category: row.category as string | undefined,
     barcode: row.barcode as string | undefined,
+    nutriScore: row.nutri_score as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+    novaGroup: row.nova_group as 1 | 2 | 3 | 4 | undefined,
+    classificationSource: row.classification_source as 'label' | 'openfoodfacts' | 'manual' | 'calculated' | undefined,
+    classificationDate: row.classification_date as string | undefined,
     per100: {
       calories: row.calories_per_100 as number,
       protein: row.protein_per_100 as number,
       carbs: row.carbs_per_100 as number,
       fat: row.fat_per_100 as number,
       fiber: row.fiber_per_100 as number,
+      sugars: row.sugars_per_100 as number | undefined,
+      saturatedFat: row.saturated_fat_per_100 as number | undefined,
+      salt: row.salt_per_100 as number | undefined,
     },
     notes: row.notes as string | undefined,
     createdAt: row.created_at as string,
@@ -61,6 +68,13 @@ export async function upsertFoodToSupabase(food: Food, userId: string): Promise<
       brand: food.brand,
       category: food.category,
       barcode: food.barcode,
+      nutri_score: food.nutriScore,
+      nova_group: food.novaGroup,
+      classification_source: food.classificationSource,
+      classification_date: food.classificationDate,
+      sugars_per_100: food.per100.sugars,
+      saturated_fat_per_100: food.per100.saturatedFat,
+      salt_per_100: food.per100.salt,
       calories_per_100: food.per100.calories,
       protein_per_100: food.per100.protein,
       carbs_per_100: food.per100.carbs,
@@ -86,12 +100,16 @@ export async function deleteFoodFromSupabase(id: string, userId: string): Promis
 // ENTRIES
 // ============================================================
 export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntry[]> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('entries')
     .select('*')
     .eq('user_id', userId)
     .order('created_at')
-  if (error) throw error
+  if (error) {
+    const msg = error?.message || error?.details || error?.hint || JSON.stringify(error)
+    console.error('[Supabase] Error fetching entries:', msg, error)
+    throw new Error(`Error al cargar entradas: ${msg}`)
+  }
   return (data || []).map((row: Record<string, unknown>) => ({
     id: row.id as string,
     date: row.date as string,
@@ -100,6 +118,8 @@ export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntr
     foodId: row.food_id as string | undefined,
     foodName: row.food_name as string,
     brand: row.brand as string | undefined,
+    nutriScore: row.nutri_score as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+    novaGroup: row.nova_group as 1 | 2 | 3 | 4 | undefined,
     grams: row.grams as number,
     per100: {
       calories: row.calories_declared as number / (row.grams as number / 100),
@@ -120,28 +140,65 @@ export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntr
 }
 
 export async function upsertEntryToSupabase(entry: FoodEntry, userId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const fullPayload = {
+    id: entry.id,
+    user_id: userId,
+    date: entry.date,
+    meal: entry.meal,
+    meal_block_id: entry.mealBlockId,
+    nutri_score: entry.nutriScore,
+    nova_group: entry.novaGroup,
+    food_id: entry.foodId,
+    food_name: entry.foodName,
+    brand: entry.brand,
+    grams: entry.grams,
+    calories_declared: entry.caloriesDeclared,
+    calories_estimated: entry.caloriesEstimated,
+    protein: entry.protein,
+    carbs: entry.carbs,
+    fat: entry.fat,
+    fiber: entry.fiber,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  }
+
+  const basePayload: Record<string, unknown> = {
+    id: entry.id,
+    user_id: userId,
+    date: entry.date,
+    meal: entry.meal,
+    food_id: entry.foodId,
+    food_name: entry.foodName,
+    brand: entry.brand,
+    grams: entry.grams,
+    calories_declared: entry.caloriesDeclared,
+    calories_estimated: entry.caloriesEstimated,
+    protein: entry.protein,
+    carbs: entry.carbs,
+    fat: entry.fat,
+    fiber: entry.fiber,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  }
+
+  const { error: fullError } = await (supabase as any)
     .from('entries')
-    .upsert({
-      id: entry.id,
-      user_id: userId,
-      date: entry.date,
-      meal: entry.meal,
-      meal_block_id: entry.mealBlockId,
-      food_id: entry.foodId,
-      food_name: entry.foodName,
-      brand: entry.brand,
-      grams: entry.grams,
-      calories_declared: entry.caloriesDeclared,
-      calories_estimated: entry.caloriesEstimated,
-      protein: entry.protein,
-      carbs: entry.carbs,
-      fat: entry.fat,
-      fiber: entry.fiber,
-      created_at: entry.createdAt,
-      updated_at: entry.updatedAt,
-    }, { onConflict: 'id' })
-  if (error) throw error
+    .upsert(fullPayload, { onConflict: 'id' })
+
+  if (!fullError) return
+
+  const msg = fullError?.message || fullError?.details || fullError?.hint || JSON.stringify(fullError)
+  if (msg.includes('column') && msg.includes('does not exist')) {
+    console.warn('[Supabase] Some columns not found in entries, saving base data only. Apply migrations 017/020.')
+    const { error: baseError } = await (supabase as any)
+      .from('entries')
+      .upsert(basePayload, { onConflict: 'id' })
+    if (baseError) throw baseError
+    return
+  }
+
+  console.error('[Supabase] Error upserting entry:', msg, fullError)
+  throw new Error(`Error al guardar entrada: ${msg}`)
 }
 
 export async function deleteEntryFromSupabase(id: string, userId: string): Promise<void> {
@@ -639,7 +696,14 @@ export async function fetchMealBlocksFromSupabase(userId: string, date?: string)
   let q = (supabase as any).from('meal_blocks').select('*').eq('user_id', userId)
   if (date) q = q.eq('date', date)
   const { data, error } = await q.order('created_at')
-  if (error) throw error
+  if (error) {
+    const msg = error?.message || error?.details || error?.hint || JSON.stringify(error)
+    console.error('[Supabase] Error fetching meal blocks:', msg, error)
+    if (msg.includes('relation') && msg.includes('does not exist')) {
+      console.warn('[Supabase] meal_blocks table does not exist. Apply migration 017 in SQL Editor.')
+    }
+    throw new Error(`Error al cargar comidas: ${msg}`)
+  }
   return (data || []).map((row: Record<string, unknown>) => ({
     id: row.id as string,
     userId: row.user_id as string,
@@ -689,33 +753,50 @@ export async function upsertMealBlockToSupabase(block: import('../types').MealBl
 
   if (!fullError) return
 
+  // Extract the real error message from Supabase (PostgrestError is not an Error instance)
+  const supabaseMsg = fullError?.message || fullError?.details || fullError?.hint || JSON.stringify(fullError)
+  const supabaseCode = fullError?.code || 'unknown'
+  console.error('[Supabase] Error upserting meal block:', {
+    message: supabaseMsg,
+    code: supabaseCode,
+    details: fullError?.details,
+    hint: fullError?.hint,
+  })
+
   // If the error is about missing columns, retry with base payload
-  const msg = fullError.message || ''
-  if (msg.includes('column') && (msg.includes('does not exist') || msg.includes('finished_at') || msg.includes('quality_score') || msg.includes('quality_version'))) {
+  if (supabaseMsg.includes('column') && (supabaseMsg.includes('does not exist') || supabaseMsg.includes('finished_at') || supabaseMsg.includes('quality_score') || supabaseMsg.includes('quality_version'))) {
     console.warn('[Supabase] Quality columns not found, saving base data only. Apply migration 018 to enable meal scoring.')
     const { error: baseError } = await (supabase as any)
       .from('meal_blocks')
       .upsert(basePayload, { onConflict: 'id' })
     if (baseError) {
-      console.error('[Supabase] Error upserting meal block (base):', baseError)
-      throw baseError
+      const baseMsg = baseError?.message || baseError?.details || baseError?.hint || JSON.stringify(baseError)
+      console.error('[Supabase] Error upserting meal block (base):', baseMsg, baseError)
+      throw new Error(`Error al guardar comida: ${baseMsg} (código: ${baseError?.code || 'unknown'})`)
     }
     return
   }
 
   // If the table doesn't exist at all
-  if (msg.includes('relation') && msg.includes('does not exist')) {
-    console.error('[Supabase] meal_blocks table does not exist. Apply migration 017.')
-    throw new Error('La tabla de comidas no existe en Supabase. Ejecuta la migración 017 en SQL Editor.')
+  if (supabaseMsg.includes('relation') && supabaseMsg.includes('does not exist')) {
+    throw new Error(`La tabla de comidas no existe en Supabase. Ejecuta la migración 017 en SQL Editor. (Detalle: ${supabaseMsg})`)
   }
 
-  console.error('[Supabase] Error upserting meal block:', fullError)
-  throw fullError
+  // If a column doesn't exist
+  if (supabaseMsg.includes('column') && supabaseMsg.includes('does not exist')) {
+    throw new Error(`Faltan columnas en la tabla meal_blocks. Ejecuta la migración 018 en Supabase SQL Editor. (Detalle: ${supabaseMsg})`)
+  }
+
+  throw new Error(`Error al guardar comida: ${supabaseMsg} (código: ${supabaseCode})`)
 }
 
 export async function deleteMealBlockFromSupabase(id: string, userId: string): Promise<void> {
   const { error } = await (supabase as any).from('meal_blocks').delete().eq('id', id).eq('user_id', userId)
-  if (error) throw error
+  if (error) {
+    const msg = error?.message || error?.details || error?.hint || JSON.stringify(error)
+    console.error('[Supabase] Error deleting meal block:', msg, error)
+    throw new Error(`Error al eliminar comida: ${msg}`)
+  }
 }
 
 export { getCurrentUserId }

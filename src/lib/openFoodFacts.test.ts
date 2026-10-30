@@ -107,4 +107,82 @@ describe('parseOpenFoodFactsResponse', () => {
     expect(r.product?.caloriesPer100).toBe(100)
     expect(r.product?.proteinPer100).toBe(10)
   })
+
+describe('parseOpenFoodFactsResponse - Nutri-Score oficial', () => {
+  function makeJson(grade: unknown, extra: Record<string, unknown> = {}) {
+    return {
+      status: 1,
+      product: {
+        code: '123',
+        product_name: 'Producto test',
+        nutriments: { 'energy-kcal_100g': 100, proteins_100g: 5, carbohydrates_100g: 10, fat_100g: 3 },
+        nutriscore_grade: grade,
+        ...extra,
+      },
+    }
+  }
+
+  it('conserva Nutri-Score C', () => {
+    const r = parseOpenFoodFactsResponse(makeJson('c'), '123')
+    expect(r.product?.nutriScore).toBe('C')
+  })
+
+  it('conserva Nutri-Score A', () => {
+    const r = parseOpenFoodFactsResponse(makeJson('a'), '123')
+    expect(r.product?.nutriScore).toBe('A')
+  })
+
+  it('conserva B, D y E', () => {
+    for (const g of ['b', 'd', 'e']) {
+      const r = parseOpenFoodFactsResponse(makeJson(g), '123')
+      expect(r.product?.nutriScore).toBe(g.toUpperCase())
+    }
+  })
+
+  it('devuelve undefined si no hay Nutri-Score (No disponible)', () => {
+    const r = parseOpenFoodFactsResponse(makeJson(null), '123')
+    expect(r.product?.nutriScore).toBeUndefined()
+  })
+
+  it('usa nutrition_grades como respaldo (campo legacy)', () => {
+    const json = {
+      status: 1,
+      product: {
+        code: '123',
+        product_name: 'Legacy',
+        nutriments: { 'energy-kcal_100g': 100 },
+        nutrition_grades: 'd',
+      },
+    }
+    const r = parseOpenFoodFactsResponse(json, '123')
+    expect(r.product?.nutriScore).toBe('D')
+  })
+
+  it('usa nutriscore_data.grade como último respaldo', () => {
+    const json = {
+      status: 1,
+      product: {
+        code: '123',
+        product_name: 'Data',
+        nutriments: { 'energy-kcal_100g': 100 },
+        nutriscore_data: { grade: 'e' },
+      },
+    }
+    const r = parseOpenFoodFactsResponse(json, '123')
+    expect(r.product?.nutriScore).toBe('E')
+  })
+
+  it('no asigna A por defecto cuando el dato falta', () => {
+    const json = {
+      status: 1,
+      product: {
+        code: '123',
+        product_name: 'Sin grade',
+        nutriments: { 'energy-kcal_100g': 100 },
+      },
+    }
+    const r = parseOpenFoodFactsResponse(json, '123')
+    expect(r.product?.nutriScore).toBeUndefined()
+  })
+})
 })

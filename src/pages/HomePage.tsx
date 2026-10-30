@@ -20,6 +20,7 @@ import { DateNavigator } from '../components/ui/DateNavigator'
 import { MacroRing } from '../components/ui/MacroRing'
 import { Button } from '../components/ui/Button'
 import { MacroEnergyNotice } from '../components/nutrition/NutritionSummary'
+import { CalorieSegmentBar } from '../components/nutrition/CalorieSegmentBar'
 import { AddFoodModal } from '../components/nutrition/AddFoodModal'
 import { WeightModal } from '../components/nutrition/WeightModal'
 import { sumEntries, progressValue, workoutStats, bmi } from '../lib/calculations'
@@ -42,6 +43,7 @@ const STATUS_CLASS: Record<Workout['status'], string> = {
   in_progress: 'chip border-amber-500/30 bg-amber-500/10 text-amber-400',
   completed: 'chip border-lime-500/30 bg-lime-400/10 text-accent',
 }
+
 
 export function HomePage() {
   const { settings, selectedDate, notify } = useApp()
@@ -120,7 +122,7 @@ export function HomePage() {
     entries: allEntries.filter((entry) => entry.meal === meal.value),
   })).map((meal) => ({ ...meal, totals: sumEntries(meal.entries) }))
 
-  const visibleMeals = meals.filter((meal) => meal.entries.length > 0 || ['desayuno', 'almuerzo', 'comida', 'cena'].includes(meal.value))
+  const visibleMeals = meals.filter((meal) => meal.entries.length > 0)
 
   const openAdd = (meal: MealType) => {
     setAddMeal(meal)
@@ -201,15 +203,13 @@ export function HomePage() {
               </span>
             </div>
 
-            <div className="mt-5 h-2.5 w-full overflow-hidden rounded-full bg-line">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-[width] duration-700 ease-out',
-                  calories.exceeded ? 'bg-rose-400' : 'bg-gradient-to-r from-lime-600 via-lime-400 to-lime-300',
-                )}
-                style={{ width: `${calories.visualPercent}%` }}
-              />
-            </div>
+            <CalorieSegmentBar
+              segments={meals
+                .filter((m) => m.entries.length > 0 && m.totals.calories > 0)
+                .map((m) => ({ meal: m.value, kcal: m.totals.calories }))}
+              target={settings?.targets.calories ?? 0}
+              heightClassName="h-2.5"
+            />
 
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <span className={calories.exceeded ? 'text-rose-400' : 'text-muted'}>

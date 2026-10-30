@@ -14,13 +14,13 @@ describe('scoreFood', () => {
   })
 
   it('high sugar food → lower grade', () => {
-    const r = scoreFood({ per100: per100({ calories: 400, protein: 2, carbs: 60, fat: 10, fiber: 0 }) })
+    const r = scoreFood({ per100: per100({ calories: 400, protein: 2, carbs: 60, fat: 10, fiber: 0, sugars: 60 }) })
     // high sugar (carbs proxy) should reduce score
     expect(r.score).toBeLessThan(70)
   })
 
   it('high salt food → lower grade', () => {
-    const r = scoreFood({ per100: { calories: 300, protein: 5, carbs: 30, fat: 15, fiber: 1, salt: 3 } as any })
+    const r = scoreFood({ per100: { calories: 300, protein: 5, carbs: 30, fat: 15, fiber: 1, sugars: 30, saturatedFat: 15, salt: 3 } as any })
     expect(r.score).toBeLessThan(60)
   })
 

@@ -41,6 +41,10 @@ export const foodSchema = z
     brand: optionalText(60),
     category: optionalText(40),
     barcode: optionalText(32),
+    nutriScore: z.enum(['A', 'B', 'C', 'D', 'E']).optional().or(z.literal('')),
+    novaGroup: z.coerce.number().int().min(1).max(4).optional().nullable(),
+    classificationSource: z.enum(['label', 'openfoodfacts', 'manual', 'calculated']).optional().or(z.literal('')),
+    classificationDate: optionalText(40),
     caloriesPer100: z
       .number({ invalid_type_error: 'Introduce un número válido' })
       .min(0, 'No puede ser negativo')
@@ -66,6 +70,9 @@ export const foodSchema = z
       .min(0, 'No puede ser negativo')
       .max(100, 'Máximo 100 g por 100 g')
       .refine((v) => !Number.isNaN(v), 'Introduce un número válido'),
+    sugarsPer100: z.number().min(0).max(100).optional(),
+    saturatedFatPer100: z.number().min(0).max(100).optional(),
+    saltPer100: z.number().min(0).max(100).optional(),
     notes: optionalText(300),
   })
   // No se rechaza automáticamente si la suma de macros supera 100 g.

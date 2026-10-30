@@ -32,6 +32,9 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
   const [carbs, setCarbs] = useState('')
   const [fat, setFat] = useState('')
   const [fiber, setFiber] = useState('')
+  const [sugars, setSugars] = useState('')
+  const [saturatedFat, setSaturatedFat] = useState('')
+  const [salt, setSalt] = useState('')
   const [grams, setGrams] = useState('100')
   const [meal, setMeal] = useState<MealType>(defaultMeal)
   const [saving, setSaving] = useState(false)
@@ -47,6 +50,9 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
     setCarbs(product.carbsPer100 !== null ? String(product.carbsPer100) : '')
     setFat(product.fatPer100 !== null ? String(product.fatPer100) : '')
     setFiber(product.fiberPer100 !== null ? String(product.fiberPer100) : '')
+    setSugars(product.sugarsPer100 !== null ? String(product.sugarsPer100) : '')
+    setSaturatedFat(product.saturatedFatPer100 !== null ? String(product.saturatedFatPer100) : '')
+    setSalt(product.saltPer100 !== null ? String(product.saltPer100) : '')
     setGrams('100')
     setMeal(defaultMeal)
     setSaving(false)
@@ -65,6 +71,9 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
     carbs: Number(carbs.replace(',', '.')) || 0,
     fat: Number(fat.replace(',', '.')) || 0,
     fiber: Number(fiber.replace(',', '.')) || 0,
+    sugars: sugars ? Number(sugars.replace(',', '.')) : undefined,
+    saturatedFat: saturatedFat ? Number(saturatedFat.replace(',', '.')) : undefined,
+    salt: salt ? Number(salt.replace(',', '.')) : undefined,
   }
   const preview = per100.calories >= 0 ? nutritionForGrams(per100, parsedGrams) : null
   const foodScore = scoreFood({ per100, name, category: undefined })
@@ -97,11 +106,18 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
         brand: brand.trim() || undefined,
         category: undefined,
         barcode: product?.barcode,
+        nutriScore: product?.nutriScore || undefined,
+        novaGroup: product?.novaGroup,
+        classificationSource: product?.nutriScore || product?.novaGroup ? 'openfoodfacts' : undefined,
+        classificationDate: (product?.nutriScore || product?.novaGroup) ? new Date().toISOString() : undefined,
         caloriesPer100: per100.calories,
         proteinPer100: per100.protein,
         carbsPer100: per100.carbs,
         fatPer100: per100.fat,
         fiberPer100: per100.fiber,
+        sugarsPer100: per100.sugars,
+        saturatedFatPer100: per100.saturatedFat,
+        saltPer100: per100.salt,
         notes: undefined,
       })
       await addFoodEntry({ food, grams: parsedGrams, date, meal, mealBlockId })
@@ -129,6 +145,16 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
             <p className="text-sm font-semibold text-fg">{product.name || 'Producto sin nombre'}</p>
             {product.brand && <p className="text-xs text-muted">{product.brand}</p>}
             <p className="text-[10px] text-faint mt-1">Código: {product.barcode}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-fg">
+                Nutri-Score oficial: {product.nutriScore ?? 'No disponible'}
+              </span>
+              {product.novaGroup && (
+                <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-fg">
+                  NOVA: {product.novaGroup}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -139,7 +165,7 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
         )}
 
         <div className="flex items-center gap-2 rounded-xl border border-line bg-raised/50 px-3 py-2 text-xs">
-          <span className="text-muted">Calidad nutricional:</span>
+          <span className="text-muted">Calidad GymProgress (propia):</span>
           <span className={`rounded-md border px-2 py-0.5 font-semibold ${gradeColor(foodScore.grade)}`}>
             {foodScore.grade} · {foodScore.score}/100
           </span>

@@ -3,6 +3,7 @@ import type { Settings } from '../../types'
 import { kcalFromMacros, progressValue } from '../../lib/calculations'
 import { formatGrams, formatKcal, formatPercent } from '../../lib/format'
 import { ProgressBar } from '../ui/ProgressBar'
+import { CalorieSegmentBar } from './CalorieSegmentBar'
 import { cn } from '../../lib/cn'
 
 export function MacroEnergyNotice({
@@ -47,9 +48,10 @@ interface NutritionSummaryProps {
   }
   targets: Settings['targets']
   showEnergyNotice?: boolean
+  mealSegments?: { meal: string; kcal: number }[]
 }
 
-export function NutritionSummary({ totals, targets, showEnergyNotice = true }: NutritionSummaryProps) {
+export function NutritionSummary({ totals, targets, showEnergyNotice = true, mealSegments }: NutritionSummaryProps) {
   const calories = progressValue(totals.calories, targets.calories)
   const carbsInRange =
     totals.carbs >= Math.min(targets.carbMin, targets.carbMax) && totals.carbs <= Math.max(targets.carbMin, targets.carbMax)
@@ -89,15 +91,21 @@ export function NutritionSummary({ totals, targets, showEnergyNotice = true }: N
         </div>
       </div>
 
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-line">
-        <div
-          className={cn(
-            'h-full rounded-full transition-[width] duration-500 ease-out',
-            calories.exceeded ? 'bg-rose-400' : 'bg-gradient-to-r from-lime-600 to-lime-300',
-          )}
-          style={{ width: `${calories.visualPercent}%` }}
-        />
-      </div>
+      {mealSegments && mealSegments.length > 0 ? (
+        <div className="mt-3">
+          <CalorieSegmentBar segments={mealSegments} target={targets.calories} heightClassName="h-2" />
+        </div>
+      ) : (
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-line">
+          <div
+            className={cn(
+              'h-full rounded-full transition-[width] duration-500 ease-out',
+              calories.exceeded ? 'bg-rose-400' : 'bg-gradient-to-r from-lime-600 to-lime-300',
+            )}
+            style={{ width: `${calories.visualPercent}%` }}
+          />
+        </div>
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-raised/60 p-2.5 text-[10px]">
         <div>

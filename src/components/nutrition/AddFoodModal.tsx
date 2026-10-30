@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Calculator, Camera, Check, Loader2, Plus, Search, UtensilsCrossed } from 'lucide-react'
-import type { MealType } from '../../types'
+import { ArrowLeft, Calculator, Camera, Check, Loader2, Pencil, Plus, Search, Trash2, UtensilsCrossed } from 'lucide-react'
+import type { Food, MealType } from '../../types'
 import { MEAL_TYPES } from '../../types'
 import { nutritionForGrams, roundTo } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
-import { addFoodEntry } from '../../lib/repositories'
+import { addFoodEntry, deleteFood } from '../../lib/repositories'
 import { useApp } from '../../context/AppContext'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { cn } from '../../lib/cn'
 import { FoodForm } from './FoodForm'
+import { FoodFormModal } from './FoodFormModal'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { useFoods } from '../../hooks/useSupabaseData'
 import { BarcodeScannerModal } from './BarcodeScannerModal'
 import { BarcodeConfirmModal } from './BarcodeConfirmModal'
@@ -38,8 +40,11 @@ function normalize(text: string): string {
 
 export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', mealBlockId, initialFoodId, onAdded }: AddFoodModalProps) {
   const { notify } = useApp()
-  const { data: foodsData } = useFoods()
+  const { data: foodsData, refetch: refetchFoods } = useFoods()
   const foods = foodsData ?? []
+  const [editingFood, setEditingFood] = useState<Food | null>(null)
+  const [foodFormOpen, setFoodFormOpen] = useState(false)
+  const [deletingFood, setDeletingFood] = useState<Food | null>(null)
   const [mode, setMode] = useState<'search' | 'create'>('search')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -309,29 +314,58 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', me
           ) : (
             <div className="-mx-1 max-h-[46vh] space-y-1.5 overflow-y-auto px-1 py-1">
               {filtered.map((food) => (
-                <button
+                <div
                   key={food.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedId(food.id)
-                    setGrams('100')
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl border border-line bg-raised/60 px-3 py-2.5 text-left transition hover:border-lime-500/40 hover:bg-raised"
+                  className="flex w-full items-center gap-2 rounded-xl border border-line bg-raised/60 px-3 py-2.5 transition hover:border-lime-500/40 hover:bg-raised"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-fg">{food.name}</p>
-                    <p className="truncate text-[11px] text-faint">
-                      {[food.brand, food.category].filter(Boolean).join(' · ') || 'Sin marca'}
-                    </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(food.id)
+                      setGrams('100')
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-fg">{food.name}</p>
+                      <p className="truncate text-[11px] text-faint">
+                        {[food.brand, food.category].filter(Boolean).join(' · ') || 'Sin marca'}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-semibold tabular text-fg">{formatKcal(food.per100.calories)} kcal</p>
+                      <p className="text-[10px] tabular text-faint">
+                        P {formatGrams(food.per100.protein)} · C {formatGrams(food.per100.carbs)} · G{' '}
+                        {formatGrams(food.per100.fat)}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingFood(food)
+                        setFoodFormOpen(true)
+                      }}
+                      className="btn-icon h-8 w-8 hover:text-accent"
+                      aria-label={`Editar ${food.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeletingFood(food)
+                      }}
+                      className="btn-icon h-8 w-8 hover:text-rose-400"
+                      aria-label={`Eliminar ${food.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-xs font-semibold tabular text-fg">{formatKcal(food.per100.calories)} kcal</p>
-                    <p className="text-[10px] tabular text-faint">
-                      P {formatGrams(food.per100.protein)} · C {formatGrams(food.per100.carbs)} · G{' '}
-                      {formatGrams(food.per100.fat)}
-                    </p>
-                  </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -387,6 +421,38 @@ export function AddFoodModal({ open, onClose, date, defaultMeal = 'almuerzo', me
       open={labelScannerOpen}
       onClose={() => setLabelScannerOpen(false)}
       onResult={handleLabelResult}
+    />
+
+    <FoodFormModal
+      open={foodFormOpen}
+      food={editingFood ?? undefined}
+      onClose={() => {
+        setFoodFormOpen(false)
+        setEditingFood(null)
+      }}
+      onSaved={() => {
+        void refetchFoods()
+      }}
+    />
+
+    <ConfirmDialog
+      open={Boolean(deletingFood)}
+      title="Eliminar alimento"
+      message={`¿Quieres eliminar «${deletingFood?.name ?? ''}» de la biblioteca? Las comidas registradas conservan sus valores.`}
+      confirmLabel="Eliminar"
+      danger
+      onConfirm={async () => {
+        if (!deletingFood) return
+        try {
+          await deleteFood(deletingFood.id)
+          void refetchFoods()
+        } catch {
+          notify('No se pudo eliminar el alimento', 'error')
+        } finally {
+          setDeletingFood(null)
+        }
+      }}
+      onClose={() => setDeletingFood(null)}
     />
     </>
   )

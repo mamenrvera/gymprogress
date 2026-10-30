@@ -16,6 +16,8 @@ export interface OpenFoodFactsProduct {
   sugarsPer100: number | null
   fiberPer100: number | null
   saltPer100: number | null
+  nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
+  novaGroup?: 1 | 2 | 3 | 4
 }
 
 export interface OpenFoodFactsResult {
@@ -24,7 +26,7 @@ export interface OpenFoodFactsResult {
   missingFields?: string[]
 }
 
-const FIELDS = 'code,product_name,brands,image_url,nutriments'
+const FIELDS = 'code,product_name,brands,image_url,nutriments,nutriscore_grade,nutrition_grades,nova_group'
 
 export function parseOpenFoodFactsResponse(json: any, barcode: string): OpenFoodFactsResult {
   if (json.status !== 1 || !json.product) {
@@ -44,6 +46,23 @@ export function parseOpenFoodFactsResponse(json: any, barcode: string): OpenFood
   const fiber = n['fiber_100g'] ?? n['fiber'] ?? null
   const salt = n['salt_100g'] ?? n['salt'] ?? null
 
+  // Nutri-Score oficial de Open Food Facts.
+  // Se prioriza nutriscore_grade (formato actual), con respaldo en
+  // nutrition_grades (campo legacy de productos antiguos) y, por último,
+  // nutriscore_data.grade. Nunca se asigna por defecto ni se infiere de
+  // nuestra puntuación propia.
+  const nutriScoreCandidate =
+    p.nutriscore_grade ||
+    p.nutrition_grades ||
+    (p.nutriscore_data && p.nutriscore_data.grade) ||
+    ''
+  const nutriScoreRaw = String(nutriScoreCandidate).trim().toUpperCase()
+  const nutriScore = ['A', 'B', 'C', 'D', 'E'].includes(nutriScoreRaw)
+    ? (nutriScoreRaw as 'A' | 'B' | 'C' | 'D' | 'E')
+    : undefined
+  const novaRaw = p.nova_group
+  const novaGroup = (novaRaw === 1 || novaRaw === 2 || novaRaw === 3 || novaRaw === 4) ? novaRaw as 1 | 2 | 3 | 4 : undefined
+
   const product: OpenFoodFactsProduct = {
     barcode: p.code || barcode,
     name: p.product_name || '',
@@ -57,6 +76,8 @@ export function parseOpenFoodFactsResponse(json: any, barcode: string): OpenFood
     sugarsPer100: sugars !== null ? Number(sugars) : null,
     fiberPer100: fiber !== null ? Number(fiber) : null,
     saltPer100: salt !== null ? Number(salt) : null,
+    nutriScore,
+    novaGroup,
   }
 
   const missingFields: string[] = []

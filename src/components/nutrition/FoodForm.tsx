@@ -31,11 +31,18 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
       brand: initialFood?.brand ?? '',
       category: initialFood?.category ?? '',
       barcode: initialFood?.barcode ?? '',
+      nutriScore: initialFood?.nutriScore ?? '',
+      novaGroup: initialFood?.novaGroup ?? undefined,
+      classificationSource: initialFood?.classificationSource ?? '',
+      classificationDate: initialFood?.classificationDate ?? '',
       caloriesPer100: initialFood?.per100.calories ?? 0,
       proteinPer100: initialFood?.per100.protein ?? 0,
       carbsPer100: initialFood?.per100.carbs ?? 0,
       fatPer100: initialFood?.per100.fat ?? 0,
       fiberPer100: initialFood?.per100.fiber ?? 0,
+      sugarsPer100: initialFood?.per100.sugars,
+      saturatedFatPer100: initialFood?.per100.saturatedFat,
+      saltPer100: initialFood?.per100.salt,
       notes: initialFood?.notes ?? '',
     },
   })
@@ -98,6 +105,43 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="rounded-xl border border-line bg-raised/50 p-3">
+          <p className="mb-3 text-xs font-semibold text-fg">Clasificación nutricional (opcional)</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label" htmlFor="food-nutriscore">Nutri-Score oficial</label>
+              <select id="food-nutriscore" className="input" {...register('nutriScore')}>
+                <option value="">Sin dato</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+                <option value="E">E</option>
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="food-nova">Grupo NOVA</label>
+              <select id="food-nova" className="input" {...register('novaGroup')}>
+                <option value="">Sin dato</option>
+                <option value="1">1 - Sin procesar</option>
+                <option value="2">2 - Ingredientes culinarios</option>
+                <option value="3">3 - Procesados</option>
+                <option value="4">4 - Ultraprocesados</option>
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="food-classsource">Fuente</label>
+              <select id="food-classsource" className="input" {...register('classificationSource')}>
+                <option value="">Sin dato</option>
+                <option value="label">Etiqueta del fabricante</option>
+                <option value="openfoodfacts">Open Food Facts</option>
+                <option value="manual">Introducción manual</option>
+                <option value="calculated">Cálculo propio</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="sm:col-span-2">
@@ -184,6 +228,45 @@ export function FoodForm({ initialFood, onSaved, onCancel }: FoodFormProps) {
               {...register('fiberPer100', { setValueAs: parseDecimal })}
             />
             {errors.fiberPer100 ? <p className="field-error">{errors.fiberPer100.message}</p> : null}
+          </div>
+          <div>
+            <label className="label" htmlFor="food-sugars">
+              Azúcares (g)
+            </label>
+            <input
+              id="food-sugars"
+              type="text"
+              inputMode="decimal"
+              className={cn('input tabular', errors.sugarsPer100 && 'input-error')}
+              {...register('sugarsPer100', { setValueAs: parseDecimal })}
+            />
+            {errors.sugarsPer100 ? <p className="field-error">{errors.sugarsPer100.message}</p> : null}
+          </div>
+          <div>
+            <label className="label" htmlFor="food-satfat">
+              Grasas saturadas (g)
+            </label>
+            <input
+              id="food-satfat"
+              type="text"
+              inputMode="decimal"
+              className={cn('input tabular', errors.saturatedFatPer100 && 'input-error')}
+              {...register('saturatedFatPer100', { setValueAs: parseDecimal })}
+            />
+            {errors.saturatedFatPer100 ? <p className="field-error">{errors.saturatedFatPer100.message}</p> : null}
+          </div>
+          <div>
+            <label className="label" htmlFor="food-salt">
+              Sal (g)
+            </label>
+            <input
+              id="food-salt"
+              type="text"
+              inputMode="decimal"
+              className={cn('input tabular', errors.saltPer100 && 'input-error')}
+              {...register('saltPer100', { setValueAs: parseDecimal })}
+            />
+            {errors.saltPer100 ? <p className="field-error">{errors.saltPer100.message}</p> : null}
           </div>
         </div>
       </div>

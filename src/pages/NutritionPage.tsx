@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom'
 import {
   BookOpen,
   Calculator,
-  Flame,
   Pencil,
   Plus,
   Search,
@@ -26,7 +25,6 @@ import { createMealBlock, deleteMealBlock } from '../lib/repositories'
 import { useMealBlocks } from '../hooks/useSupabaseData'
 import { FoodFormModal } from '../components/nutrition/FoodFormModal'
 import { EditFoodEntryModal } from '../components/nutrition/EditFoodEntryModal'
-import { cn } from '../lib/cn'
 import { sumEntries } from '../lib/calculations'
 import { formatGrams, formatKcal } from '../lib/format'
 import { deleteFood } from '../lib/repositories'
@@ -42,7 +40,6 @@ function normalize(text: string): string {
 export function NutritionPage() {
   const { selectedDate, settings, notify } = useApp()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') === 'alimentos' ? 'alimentos' : 'diario'
 
   const { data: entriesData, refetch: refetchEntries } = useEntries()
   const { data: foodsData, refetch: refetchFoods } = useFoods()
@@ -65,7 +62,6 @@ export function NutritionPage() {
   const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set())
   const [mealSelectorOpen, setMealSelectorOpen] = useState(false)
   const [deletingBlock, setDeletingBlock] = useState<import('../types').MealBlock | null>(null)
-  const [finalizingBlockId, setFinalizingBlockId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!searchParams.get('add')) return
@@ -122,6 +118,10 @@ export function NutritionPage() {
     return blocks
   }, [entries, mealBlocks, selectedDate])
 
+  const existingMealTypes = useMemo(() => {
+    return new Set(dayBlocks.map((b) => b.block.mealType))
+  }, [dayBlocks])
+
   const filteredFoods = useMemo(() => {
     const term = normalize(librarySearch.trim())
     return foods.filter((food) => {
@@ -167,50 +167,7 @@ export function NutritionPage() {
     }
   }
 
-  const handleFinalizeBlock = async (block: import('../types').MealBlock) => {
-    const blockEntries = entries.filter((e) => e.mealBlockId === block.id || (block.id.startsWith('legacy-') && e.meal === block.mealType && !e.mealBlockId))
-    if (blockEntries.length === 0) {
-      notify('No puedes finalizar una comida vacía', 'error')
-      return
-    }
-    setFinalizingBlockId(block.id)
-    try {
-      const { finalizeMealBlock } = await import('../lib/repositories')
-      const result = await finalizeMealBlock(block, blockEntries)
-      console.log('[NutritionPage] Meal finalized:', result.id, 'score:', result.qualityScore)
-      void refetchMealBlocks()
-      notify('Comida finalizada')
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'No se pudo finalizar la comida'
-      console.error('[NutritionPage] handleFinalizeBlock error:', msg, error)
-      notify(msg, 'error')
-    } finally {
-      setFinalizingBlockId(null)
-    }
-  }
 
-  // Invalidar puntuación si se modifica una comida finalizada
-  const invalidateIfFinalized = async (blockId: string | undefined) => {
-    if (!blockId || blockId.startsWith('legacy-')) return
-    const block = mealBlocks.find((b) => b.id === blockId)
-    if (block?.finishedAt) {
-      try {
-        const { invalidateMealBlock } = await import('../lib/repositories')
-        await invalidateMealBlock(block)
-        void refetchMealBlocks()
-        notify('La comida se ha modificado. Su puntuación anterior se ha invalidado; vuelve a finalizarla.', 'info')
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  const setTab = (nextTab: 'diario' | 'alimentos') => {
-    const next = new URLSearchParams(searchParams)
-    if (nextTab === 'alimentos') next.set('tab', 'alimentos')
-    else next.delete('tab')
-    setSearchParams(next, { replace: true })
-  }
 
   const handleDeleteFood = async () => {
     if (!deletingFood) return
@@ -254,61 +211,30 @@ export function NutritionPage() {
               <span className="hidden sm:inline">Nuevo alimento</span>
               <span className="sm:hidden">Alimento</span>
             </Button>
-            <Button size="sm" onClick={() => openAddForMeal('almuerzo')}>
-              <UtensilsCrossed className="h-4 w-4" />
-              Añadir alimento
-            </Button>
           </>
         }
       />
 
       <DateNavigator />
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="segmented" role="tablist" aria-label="Secciones de alimentación">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'diario'}
-            onClick={() => setTab('diario')}
-            className={cn('segmented-item flex items-center gap-1.5', tab === 'diario' && 'segmented-item-active')}
-          >
-            <Flame className="h-3.5 w-3.5" /> Diario
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'alimentos'}
-            onClick={() => setTab('alimentos')}
-            className={cn('segmented-item flex items-center gap-1.5', tab === 'alimentos' && 'segmented-item-active')}
-          >
-            <BookOpen className="h-3.5 w-3.5" /> Biblioteca
-            <span className="rounded-full bg-line px-1.5 py-0.5 text-[9px] tabular">{foods.length}</span>
-          </button>
-        </div>
-        <p className="hidden text-[11px] text-faint sm:block">
-          {entries.filter(e => e.date === selectedDate).length} {entries.filter(e => e.date === selectedDate).length === 1 ? 'registro' : 'registros'} · {formatKcal(totals.calories)} kcal
-        </p>
-      </div>
 
-      {tab === 'diario' ? (
+      {true ? (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <aside className="lg:col-start-2 lg:row-start-1">
             <div className="space-y-4 lg:sticky lg:top-6">
-              <NutritionSummary totals={totals} targets={settings.targets} />
-              <button
-                type="button"
-                onClick={() => setTab('alimentos')}
-                className="flex w-full items-center justify-between rounded-xl border border-line bg-raised/50 px-3.5 py-3 text-left transition hover:border-lime-500/30"
-              >
-                <span>
-                  <span className="block text-xs font-medium text-fg">Biblioteca de alimentos</span>
-                  <span className="mt-0.5 block text-[10px] text-faint">
-                    {foods.length} guardados · consulta sus valores
-                  </span>
-                </span>
-                <BookOpen className="h-4 w-4 text-faint" />
-              </button>
+              <NutritionSummary
+                totals={totals}
+                targets={settings.targets}
+                mealSegments={dayBlocks
+                  .filter((b) => b.entries.length > 0)
+                  .reduce((acc, { block, entries: be }) => {
+                    const kcal = be.reduce((a, e) => a + (e.caloriesDeclared ?? 0), 0)
+                    const existing = acc.find((x) => x.meal === block.mealType)
+                    if (existing) existing.kcal += kcal
+                    else acc.push({ meal: block.mealType, kcal })
+                    return acc
+                  }, [] as { meal: string; kcal: number }[])}
+              />
             </div>
           </aside>
 
@@ -348,13 +274,10 @@ export function NutritionPage() {
                     try {
                       await (await import('../lib/supabase')).getSupabaseClient().from('entries').delete().eq('id', entry.id)
                       void refetchEntries()
-                      await invalidateIfFinalized(block.id.startsWith('legacy-') ? undefined : block.id)
                     } catch {
                       notify('No se pudo eliminar el alimento', 'error')
                     }
                   }}
-                  onFinalize={() => void handleFinalizeBlock(block)}
-                  finalizing={finalizingBlockId === block.id}
                   onDeleteBlock={() => setDeletingBlock(block)}
                 />
               ))
@@ -494,22 +417,32 @@ export function NutritionPage() {
         initialFoodId={initialFoodId}
         onAdded={() => {
           void refetchEntries()
-          void invalidateIfFinalized(addMealBlockId)
         }}
       />
 
       <Modal open={mealSelectorOpen} onClose={() => setMealSelectorOpen(false)} title="Añadir comida" size="sm">
         <div className="space-y-2">
-          {MEAL_TYPES.map((meal) => (
-            <button
-              key={meal.value}
-              type="button"
-              onClick={() => void handleCreateMealBlock(meal.value)}
-              className="flex w-full items-center gap-3 rounded-xl border border-line bg-raised/60 px-3 py-2.5 text-left transition hover:border-lime-500/40 hover:bg-raised"
-            >
-              <span className="text-sm font-medium text-fg">{meal.label}</span>
-            </button>
-          ))}
+          {MEAL_TYPES.map((meal) => {
+            const alreadyExists = meal.value !== 'snack' && existingMealTypes.has(meal.value)
+            return (
+              <button
+                key={meal.value}
+                type="button"
+                disabled={alreadyExists}
+                onClick={() => { if (!alreadyExists) void handleCreateMealBlock(meal.value) }}
+                className={
+                  alreadyExists
+                    ? 'flex w-full items-center justify-between gap-3 rounded-xl border border-line bg-raised/30 px-3 py-2.5 text-left opacity-50 cursor-not-allowed'
+                    : 'flex w-full items-center justify-between gap-3 rounded-xl border border-line bg-raised/60 px-3 py-2.5 text-left transition hover:border-lime-500/40 hover:bg-raised'
+                }
+              >
+                <span className="text-sm font-medium text-fg">{meal.label}</span>
+                {alreadyExists ? (
+                  <span className="text-[10px] font-medium text-faint">Ya añadida</span>
+                ) : null}
+              </button>
+            )
+          })}
         </div>
       </Modal>
 
@@ -535,10 +468,8 @@ export function NutritionPage() {
         entry={editingEntry}
         open={Boolean(editingEntry)}
         onClose={() => {
-          const bid = editingEntry?.mealBlockId
           setEditingEntryId(null)
           void refetchEntries()
-          void invalidateIfFinalized(bid)
         }}
       />
       <ConfirmDialog

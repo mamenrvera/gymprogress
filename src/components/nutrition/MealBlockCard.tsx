@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
 import type { FoodEntry, MealBlock, MealType } from '../../types'
 import { sumEntries } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
-import { scoreFood, scoreMeal, dailyScoreLabel } from '../../lib/nutritionScore'
+import { scoreFood, scoreMeal, dailyScoreLabel, gradeColor } from '../../lib/nutritionScore'
 import { Button } from '../ui/Button'
 
 const MEAL_LABELS: Record<MealType, string> = {
@@ -15,12 +15,12 @@ const MEAL_LABELS: Record<MealType, string> = {
 }
 
 const MEAL_ICONS: Record<MealType, string> = {
-  desayuno: '☕',
-  almuerzo: '🍎',
-  comida: '🍽️',
-  merienda: '🍪',
-  cena: '🌙',
-  snack: '🍪',
+  desayuno: '\u{1F305}',
+  almuerzo: '\u{1F957}',
+  comida: '\u{1F37D}\uFE0F',
+  merienda: '\u{1F34E}',
+  cena: '\u{1F319}',
+  snack: '\u{1F36A}',
 }
 
 interface Props {
@@ -32,16 +32,15 @@ interface Props {
   onEditEntry: (entry: FoodEntry) => void
   onDeleteEntry: (entry: FoodEntry) => void
   onDeleteBlock: () => void
-  onFinalize: () => void
-  finalizing?: boolean
 }
 
-export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock, onFinalize, finalizing }: Props) {
+export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock }: Props) {
   const totals = sumEntries(entries)
   const label = block.title || MEAL_LABELS[block.mealType]
   const time = new Date(block.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-  const finalized = !!block.finishedAt && block.qualityScore != null
-  const mealScore = finalized ? null : scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
+  const mealScore = entries.length > 0
+    ? scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
+    : null
 
   return (
     <section className="card overflow-hidden">
@@ -59,8 +58,8 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
             <p className="shrink-0 text-xs font-semibold tabular text-fg">
               {formatKcal(totals.calories)} <span className="font-normal text-faint">kcal</span>
             </p>
-            {finalized && block.qualityScore != null ? (
-              <span className="chip shrink-0">{block.qualityScore.toFixed(1)}/10</span>
+            {mealScore ? (
+              <span className="chip shrink-0">{mealScore.score.toFixed(1)}/10</span>
             ) : null}
           </div>
           <p className="mt-0.5 text-[10px] tabular text-faint">
@@ -91,10 +90,40 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
                       onClick={() => onEditEntry(entry)}
                       className="min-w-0 flex-1 text-left"
                     >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {(() => {
+                        const fs = scoreFood({ per100: entry.per100, name: entry.foodName })
+                        const hasData = !(entry.per100.calories === 0 && entry.per100.protein === 0 && entry.per100.carbs === 0 && entry.per100.fat === 0)
+                        return (
+                          <div className="flex shrink-0 items-center gap-1">
+                            {hasData ? (
+                              <span className={`rounded px-1 py-0.5 text-[9px] font-bold leading-none ${gradeColor(fs.grade)}`} title="Calidad GymProgress (propia)">
+                                {fs.grade}
+                              </span>
+                            ) : (
+                              <span className="rounded border border-line px-1 py-0.5 text-[9px] font-bold leading-none text-faint">
+                                ?
+                              </span>
+                            )}
+                            <span
+                              className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint"
+                              title="Nutri-Score oficial"
+                            >
+                              NS:{entry.nutriScore ?? '—'}
+                            </span>
+                            {entry.novaGroup && (
+                              <span className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint">
+                                N{entry.novaGroup}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
                       <p className="truncate text-[13px] font-medium text-fg">
                         {entry.foodName}
                         {entry.brand ? <span className="font-normal text-faint"> · {entry.brand}</span> : null}
                       </p>
+                    </div>
                       <p className="mt-0.5 text-[10px] tabular text-faint">
                         {formatGrams(entry.grams)} g · P {formatGrams(entry.protein)} · C {formatGrams(entry.carbs)} · G {formatGrams(entry.fat)}
                       </p>
@@ -116,39 +145,31 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
             </ul>
           )}
 
-          {finalized && block.qualityScore != null ? (
+          {mealScore ? (
             <div className="border-t border-line px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-fg">Finalizada · {block.qualityScore.toFixed(1)}/10</p>
-                <span className="chip">{dailyScoreLabel(block.qualityScore)}</span>
+                <p className="text-xs font-semibold text-fg">Calidad de la comida · {mealScore.score.toFixed(1)}/10</p>
+                <span className="chip">{dailyScoreLabel(mealScore.score)}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-gradient-to-r from-rose-500 via-amber-500 to-emerald-500 relative">
                 <div
                   className="absolute inset-y-0 left-0 bg-surface/0"
-                  style={{ width: `${(block.qualityScore / 10) * 100}%`, boxShadow: 'inset -2px 0 0 0 rgba(0,0,0,0.4)' }}
+                  style={{ width: `${(mealScore.score / 10) * 100}%`, boxShadow: 'inset -2px 0 0 0 rgba(0,0,0,0.4)' }}
                 />
               </div>
               <div className="relative h-1 -mt-3">
                 <div
                   className="absolute top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-surface bg-fg"
-                  style={{ left: `${(block.qualityScore / 10) * 100}%` }}
+                  style={{ left: `${(mealScore.score / 10) * 100}%` }}
                 />
               </div>
+              {mealScore.provisional && (
+                <p className="text-[10px] text-amber-400">Puntuación provisional: faltan datos.</p>
+              )}
             </div>
-          ) : (
-            <div className="border-t border-line px-4 py-2.5 flex items-center justify-between gap-2">
-              <p className="text-[10px] text-faint">
-                {entries.length === 0 ? 'Añade alimentos y finaliza la comida.' : `Puntuación estimada: ${mealScore?.score.toFixed(1) ?? '—'}/10`}
-              </p>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onFinalize}
-                loading={finalizing}
-                disabled={entries.length === 0 || finalizing}
-              >
-                Finalizar comida
-              </Button>
+          ) : entries.length > 0 ? null : (
+            <div className="border-t border-line px-4 py-2.5">
+              <p className="text-[10px] text-faint">Añade alimentos para ver la puntuación de la comida.</p>
             </div>
           )}
 

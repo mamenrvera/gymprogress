@@ -46,6 +46,9 @@ function per100FromForm(values: FoodFormValues): NutritionPer100 {
     carbs: values.carbsPer100,
     fat: values.fatPer100,
     fiber: values.fiberPer100,
+    sugars: values.sugarsPer100,
+    saturatedFat: values.saturatedFatPer100,
+    salt: values.saltPer100,
   }
 }
 
@@ -87,6 +90,10 @@ export async function saveFood(values: FoodFormValues, existingId?: string): Pro
       brand: values.brand,
       category: values.category,
       barcode: values.barcode,
+      nutriScore: (values.nutriScore === '' ? undefined : values.nutriScore) as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+      novaGroup: (values.novaGroup ?? undefined) as 1 | 2 | 3 | 4 | undefined,
+      classificationSource: (values.classificationSource === '' ? undefined : values.classificationSource) as 'label' | 'openfoodfacts' | 'manual' | 'calculated' | undefined,
+      classificationDate: values.classificationDate,
       per100: per100FromForm(values),
       notes: values.notes,
       createdAt: (existing?.created_at as string) ?? timestamp,
@@ -99,6 +106,10 @@ export async function saveFood(values: FoodFormValues, existingId?: string): Pro
       brand: values.brand,
       category: values.category,
       barcode: values.barcode,
+      nutriScore: (values.nutriScore === '' ? undefined : values.nutriScore) as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+      novaGroup: (values.novaGroup ?? undefined) as 1 | 2 | 3 | 4 | undefined,
+      classificationSource: (values.classificationSource === '' ? undefined : values.classificationSource) as 'label' | 'openfoodfacts' | 'manual' | 'calculated' | undefined,
+      classificationDate: values.classificationDate,
       per100: per100FromForm(values),
       notes: values.notes,
       createdAt: timestamp,
@@ -130,6 +141,34 @@ export async function deleteFood(id: string): Promise<void> {
 export async function createMealBlock(mealType: import('../types').MealType, date: string): Promise<import('../types').MealBlock> {
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('No hay sesión activa')
+
+  // Validación: solo se permite un bloque por tipo de comida al día
+  // (excepto 'snack', que puede repetirse).
+  if (mealType !== 'snack') {
+    const client = (await import('./supabase')).getSupabaseClient()
+    const { data: existingBlocks } = await (client as any)
+      .from('meal_blocks')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .eq('meal_type', mealType)
+      .limit(1)
+    if (existingBlocks && existingBlocks.length > 0) {
+      throw new Error('Ya existe una comida de este tipo para el día seleccionado')
+    }
+    const { data: legacyEntries } = await (client as any)
+      .from('entries')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .eq('meal', mealType)
+      .is('meal_block_id', null)
+      .limit(1)
+    if (legacyEntries && legacyEntries.length > 0) {
+      throw new Error('Ya existe una comida de este tipo para el día seleccionado')
+    }
+  }
+
   const timestamp = nowISO()
   const block: import('../types').MealBlock = {
     id: newId(),
@@ -151,65 +190,6 @@ export async function deleteMealBlock(id: string): Promise<void> {
   await deleteMealBlockFromSupabase(id, userId)
 }
 
-export async function finalizeMealBlock(block: import('../types').MealBlock, entries: import('../types').FoodEntry[]): Promise<import('../types').MealBlock> {
-  const userId = await getCurrentUserId()
-  if (!userId) throw new Error('No hay sesión activa')
-
-  let score: { score: number }
-  try {
-    const { scoreMeal } = await import('./nutritionScore')
-    const { scoreFood } = await import('./nutritionScore')
-    score = scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
-  } catch (e) {
-    console.error('[Repo] Error calculating meal score:', e)
-    throw new Error('Error al calcular la puntuación de la comida.')
-  }
-
-  const updated: import('../types').MealBlock = {
-    ...block,
-    finishedAt: new Date().toISOString(),
-    qualityScore: score.score,
-    qualityVersion: 1,
-    updatedAt: new Date().toISOString(),
-  }
-
-  try {
-    const { upsertMealBlockToSupabase } = await import('./supabase-data')
-    await upsertMealBlockToSupabase(updated, userId)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error al guardar en Supabase'
-    console.error('[Repo] finalizeMealBlock Supabase error:', msg, e)
-    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('column')) {
-      throw new Error('La tabla de comidas no tiene las columnas necesarias. Ejecuta las migraciones 017 y 018 en Supabase SQL Editor.')
-    }
-    throw new Error(`No se pudo guardar: ${msg}`)
-  }
-
-  return updated
-}
-
-export async function invalidateMealBlock(block: import('../types').MealBlock): Promise<import('../types').MealBlock> {
-  const userId = await getCurrentUserId()
-  if (!userId) throw new Error('No hay sesión activa')
-  const updated: import('../types').MealBlock = {
-    ...block,
-    finishedAt: undefined,
-    qualityScore: undefined,
-    qualityVersion: undefined,
-    updatedAt: new Date().toISOString(),
-  }
-  try {
-    const { upsertMealBlockToSupabase } = await import('./supabase-data')
-    await upsertMealBlockToSupabase(updated, userId)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error al invalidar'
-    console.error('[Repo] invalidateMealBlock error:', msg, e)
-    // Don't throw - invalidation is best-effort
-  }
-  return updated
-}
-
-// ——— Registro de comidas ———
 export async function addFoodEntry(params: {
   food: Food
   grams: number
@@ -233,6 +213,8 @@ export async function addFoodEntry(params: {
     brand: params.food.brand,
     grams: params.grams,
     per100: { ...params.food.per100 },
+    nutriScore: params.food.nutriScore,
+    novaGroup: params.food.novaGroup,
     ...nutrition,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -258,25 +240,31 @@ export async function updateFoodEntry(
     .eq('user_id', userId)
     .single()
   if (fetchError || !existing) throw new Error('La entrada ya no existe')
+  const ex = existing as any
 
-  const grams = updates.grams ?? (existing.grams as number)
+  const grams = updates.grams ?? (ex.grams as number)
   if (!Number.isFinite(grams) || grams <= 0) throw new Error('Los gramos deben ser mayores que 0')
 
   const per100: NutritionPer100 = {
-    calories: (existing.calories_declared as number) / ((existing.grams as number) / 100),
-    protein: (existing.protein as number) / ((existing.grams as number) / 100),
-    carbs: (existing.carbs as number) / ((existing.grams as number) / 100),
-    fat: (existing.fat as number) / ((existing.grams as number) / 100),
-    fiber: (existing.fiber as number) / ((existing.grams as number) / 100),
+    calories: (ex.calories_declared as number) / ((ex.grams as number) / 100),
+    protein: (ex.protein as number) / ((ex.grams as number) / 100),
+    carbs: (ex.carbs as number) / ((ex.grams as number) / 100),
+    fat: (ex.fat as number) / ((ex.grams as number) / 100),
+    fiber: (ex.fiber as number) / ((ex.grams as number) / 100),
+    sugars: ex.sugars_per_100 != null ? (ex.sugars_per_100 as number) / ((ex.grams as number) / 100) : undefined,
+    saturatedFat: ex.saturated_fat_per_100 != null ? (ex.saturated_fat_per_100 as number) / ((ex.grams as number) / 100) : undefined,
+    salt: ex.salt_per_100 != null ? (ex.salt_per_100 as number) / ((ex.grams as number) / 100) : undefined,
   }
   const nutrition = nutritionForGrams(per100, grams)
   const updated: FoodEntry = {
     id,
-    date: existing.date as string,
-    meal: (updates.meal ?? existing.meal) as MealType,
-    foodId: existing.food_id as string | undefined,
-    foodName: existing.food_name as string,
-    brand: existing.brand as string | undefined,
+    date: ex.date as string,
+    meal: (updates.meal ?? ex.meal) as MealType,
+    foodId: ex.food_id as string | undefined,
+    foodName: ex.food_name as string,
+    brand: ex.brand as string | undefined,
+    nutriScore: ex.nutri_score as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+    novaGroup: ex.nova_group as 1 | 2 | 3 | 4 | undefined,
     grams,
     per100,
     caloriesDeclared: nutrition.caloriesDeclared,
@@ -285,13 +273,14 @@ export async function updateFoodEntry(
     carbs: nutrition.carbs,
     fat: nutrition.fat,
     fiber: nutrition.fiber,
-    createdAt: existing.created_at as string,
+    createdAt: ex.created_at as string,
     updatedAt: nowISO(),
   }
 
   await upsertEntryToSupabase(updated, userId)
   return updated
 }
+
 
 export async function deleteFoodEntry(id: string): Promise<void> {
   const userId = await getCurrentUserId()

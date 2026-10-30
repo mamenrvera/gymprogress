@@ -94,6 +94,9 @@ export interface NutritionPer100 {
   carbs: number
   fat: number
   fiber?: number
+  sugars?: number
+  saturatedFat?: number
+  salt?: number
 }
 
 export interface Settings {
@@ -125,6 +128,11 @@ export interface Food {
   barcode?: string
   per100: NutritionPer100
   notes?: string
+  // Clasificaciones nutricionales oficiales (opcionales)
+  nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
+  novaGroup?: 1 | 2 | 3 | 4
+  classificationSource?: 'label' | 'openfoodfacts' | 'manual' | 'calculated'
+  classificationDate?: string
   createdAt: string
   updatedAt: string
 }
@@ -152,6 +160,8 @@ export interface FoodEntry {
   brand?: string
   grams: number
   per100: NutritionPer100
+  nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
+  novaGroup?: 1 | 2 | 3 | 4
   caloriesDeclared: number
   caloriesEstimated: number
   protein: number

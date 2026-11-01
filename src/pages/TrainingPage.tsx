@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import {
   CalendarDays,
-  ChevronRight,
   Dumbbell,
   HeartPulse,
-  ListChecks,
   Pencil,
   Plus,
   Search,
   Trash2,
-  TrendingUp,
 } from 'lucide-react'
 import type { Exercise, MuscleGroup, Workout } from '../types'
 import type { CardioSession } from '../lib/cardio'
@@ -31,17 +28,16 @@ import {
   formatDuration,
   formatMonthYear,
   formatShortEs,
-  formatWeekdayShortEs,
   minutesBetween,
   startOfWeekISO,
   weekLabel,
 } from '../lib/dates'
 import { formatNumber } from '../lib/format'
-import { deleteExercise } from '../lib/repositories'
-import { WORKOUT_STATUS_CLASSES, WORKOUT_STATUS_LABELS } from '../lib/workoutUi'
+import { deleteExercise, createWorkout } from '../lib/repositories'
 import { cn } from '../lib/cn'
 import { useWorkouts, useWorkoutExercises, useSets, useExercises, useCardioSessions } from '../hooks/useSupabaseData'
 import { ExercisePhoto } from '../components/training/ExercisePhoto'
+import { WorkoutEditor } from '../components/training/WorkoutEditor'
 import { CardioFormModal } from '../components/training/CardioFormModal'
 import { deleteCardioSession } from '../lib/repositories'
 import { activityDisplayName, INTENSITY_LABELS } from '../lib/cardio'
@@ -60,46 +56,34 @@ export function TrainingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'ejercicios' ? 'ejercicios' : 'sesiones'
 
-  const { data: workoutsData, loading: workoutsLoading } = useWorkouts()
+  const { data: workoutsData, loading: workoutsLoading, refetch: refetchWorkouts } = useWorkouts()
   const { data: workoutExercisesData } = useWorkoutExercises()
   const { data: setsData } = useSets()
   const { data: exercisesData } = useExercises()
   const { data: cardioData } = useCardioSessions()
 
   const workouts = workoutsData ?? []
+
+
+
+
+
+  const handleNewWorkout = async () => {
+    try {
+      const created = await createWorkout({ name: 'Nueva sesi\u00f3n', date: selectedDate, notes: '' }, { startNow: false })
+      setActiveWorkoutId(created.id)
+      void refetchWorkouts()
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo crear la sesi\u00f3n', 'error')
+    }
+  }
   const workoutExercises = workoutExercisesData ?? []
   const sets = setsData ?? []
-  const exercises = exercisesData ?? []
-  const cardioSessions = cardioData ?? []
-
-  const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
-  const [exerciseModalOpen, setExerciseModalOpen] = useState(false)
-  const [editingExercise, setEditingExercise] = useState<Exercise | undefined>(undefined)
-  const [deletingExercise, setDeletingExercise] = useState<Exercise | undefined>(undefined)
-  const [cardioModalOpen, setCardioModalOpen] = useState(false)
-  const [editingCardio, setEditingCardio] = useState<CardioSession | undefined>(undefined)
-  const [deletingCardio, setDeletingCardio] = useState<CardioSession | undefined>(undefined)
-  const [exerciseSearch, setExerciseSearch] = useState('')
-  const [exerciseGroup, setExerciseGroup] = useState<MuscleGroup | ''>('')
-  const [historySearch, setHistorySearch] = useState('')
-
-  useEffect(() => {
-    if (!searchParams.get('nuevo')) return
-    setWorkoutModalOpen(true)
-    const next = new URLSearchParams(searchParams)
-    next.delete('nuevo')
-    setSearchParams(next, { replace: true })
-  }, [searchParams, setSearchParams])
-
-  const selectedWorkouts = workouts.filter((workout) => workout.date === selectedDate)
-  const weekStart = startOfWeekISO(selectedDate)
-  const weekEnd = endOfWeekISO(selectedDate)
-  const weekSummary = trainingPeriodSummary(workouts, sets, weekStart, weekEnd)
 
   const statsByWorkout = useMemo(() => {
     const exerciseCounts = new Map<string, number>()
-    for (const exercise of workoutExercises) {
-      exerciseCounts.set(exercise.workoutId, (exerciseCounts.get(exercise.workoutId) ?? 0) + 1)
+    for (const we of workoutExercises) {
+      exerciseCounts.set(we.workoutId, (exerciseCounts.get(we.workoutId) ?? 0) + 1)
     }
     const setsByWorkout = new Map<string, typeof sets>()
     for (const set of sets) {
@@ -114,6 +98,36 @@ export function TrainingPage() {
       ]),
     )
   }, [workouts, workoutExercises, sets])
+  const exercises = exercisesData ?? []
+  const cardioSessions = cardioData ?? []
+
+  const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
+  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null)
+  const [openHistory, setOpenHistory] = useState<Set<string>>(new Set())
+  const [exerciseModalOpen, setExerciseModalOpen] = useState(false)
+  const [editingExercise, setEditingExercise] = useState<Exercise | undefined>(undefined)
+  const [deletingExercise, setDeletingExercise] = useState<Exercise | undefined>(undefined)
+  const [cardioModalOpen, setCardioModalOpen] = useState(false)
+  const [editingCardio, setEditingCardio] = useState<CardioSession | undefined>(undefined)
+  const [deletingCardio, setDeletingCardio] = useState<CardioSession | undefined>(undefined)
+  const [exerciseSearch, setExerciseSearch] = useState('')
+  const [exerciseGroup, setExerciseGroup] = useState<MuscleGroup | ''>('')
+  const [historySearch, setHistorySearch] = useState('')
+
+  useEffect(() => {
+    if (!searchParams.get('nuevo')) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('nuevo')
+    setSearchParams(next, { replace: true })
+    void handleNewWorkout()
+  }, [searchParams, setSearchParams])
+
+  const selectedWorkouts = workouts.filter((workout) => workout.date === selectedDate)
+  const weekStart = startOfWeekISO(selectedDate)
+  const weekEnd = endOfWeekISO(selectedDate)
+  const weekSummary = trainingPeriodSummary(workouts, sets, weekStart, weekEnd)
+
+
 
   const usageByExercise = useMemo(() => {
     const map = new Map<string, number>()
@@ -183,44 +197,7 @@ export function TrainingPage() {
     }
   }
 
-  const renderWorkoutCard = (workout: Workout) => {
-    const stats = statsByWorkout.get(workout.id) ?? workoutStats([])
-    const duration =
-      workout.startedAt && workout.finishedAt ? minutesBetween(workout.startedAt, workout.finishedAt) : 0
-    return (
-      <article key={workout.id} className="card p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-fg">{workout.name}</h3>
-            <p className="mt-0.5 text-[10px] text-faint">
-              {formatWeekdayShortEs(workout.date)} {formatShortEs(workout.date)}
-              {duration > 0 ? ` · ${formatDuration(duration)}` : ''}
-            </p>
-          </div>
-          <span className={WORKOUT_STATUS_CLASSES[workout.status]}>{WORKOUT_STATUS_LABELS[workout.status]}</span>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
-          <span className="flex items-center gap-1">
-            <Dumbbell className="h-3 w-3 text-faint" /> {stats.exerciseCount} ejercicios
-          </span>
-          <span className="flex items-center gap-1">
-            <ListChecks className="h-3 w-3 text-faint" /> {stats.effectiveSets} series ef.
-          </span>
-          <span className="flex items-center gap-1">
-            <TrendingUp className="h-3 w-3 text-faint" /> {formatNumber(stats.volume, 0)} kg
-          </span>
-          {stats.pendingSets > 0 ? <span className="text-amber-400">{stats.pendingSets} pendientes</span> : null}
-        </div>
-        {workout.notes ? <p className="mt-2 line-clamp-2 text-[11px] text-muted">{workout.notes}</p> : null}
-        <Link
-          to={`/entrenamiento/sesion/${workout.id}`}
-          className="mt-3 flex items-center justify-center gap-1 rounded-lg border border-line py-2 text-[11px] font-medium text-muted transition hover:border-lime-500/40 hover:text-accent"
-        >
-          Abrir sesión <ChevronRight className="h-3 w-3" />
-        </Link>
-      </article>
-    )
-  }
+
 
   if (!settings || workoutsLoading) {
     return (
@@ -243,7 +220,7 @@ export function TrainingPage() {
             <Button size="sm" variant="secondary" onClick={() => { setEditingCardio(undefined); setCardioModalOpen(true) }}>
               <HeartPulse className="h-4 w-4" /> Cardio / deporte
             </Button>
-            <Button size="sm" onClick={() => setWorkoutModalOpen(true)}>
+            <Button size="sm" onClick={() => void handleNewWorkout()}>
               <Plus className="h-4 w-4" /> Nueva sesión
             </Button>
           </div>
@@ -251,6 +228,15 @@ export function TrainingPage() {
       />
 
       <DateNavigator />
+
+      {activeWorkoutId ? (
+        <div className="card-pad">
+          <WorkoutEditor
+            workoutId={activeWorkoutId}
+            onClose={() => { setActiveWorkoutId(null); void refetchWorkouts() }}
+          />
+        </div>
+      ) : null}
 
       <div className="segmented" role="tablist" aria-label="Secciones de entrenamiento">
         <button
@@ -321,15 +307,19 @@ export function TrainingPage() {
                   title="Sin sesiones para este día"
                   description="Crea una sesión nueva o programa un entrenamiento para esta fecha."
                   action={
-                    <Button onClick={() => setWorkoutModalOpen(true)}>
+                    <Button onClick={() => void handleNewWorkout()}>
                       <Plus className="h-4 w-4" /> Crear sesión
                     </Button>
                   }
                 />
               </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {selectedWorkouts.map(renderWorkoutCard)}
+              <div className="space-y-4">
+                {selectedWorkouts.map((workout) => (
+                  <div key={workout.id} className="card overflow-hidden">
+                    <WorkoutEditor workoutId={workout.id} onClose={() => { void refetchWorkouts() }} inline />
+                  </div>
+                ))}
               </div>
             )}
           </section>
@@ -425,40 +415,66 @@ export function TrainingPage() {
                   <div key={month}>
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-faint">{month}</p>
                     <div className="card divide-y divide-line/70 overflow-hidden">
-                      {monthWorkouts.map((workout) => {
+                      {monthWorkouts.filter((w) => w.id !== activeWorkoutId).map((workout) => {
                         const stats = statsByWorkout.get(workout.id) ?? workoutStats([])
                         const duration =
                           workout.startedAt && workout.finishedAt
                             ? minutesBetween(workout.startedAt, workout.finishedAt)
                             : 0
+                        const isOpen = openHistory.has(workout.id)
                         return (
-                          <Link
-                            key={workout.id}
-                            to={`/entrenamiento/sesion/${workout.id}`}
-                            className="flex items-center gap-3 px-3.5 py-3 transition hover:bg-raised/50"
-                          >
-                            <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg border border-line bg-raised">
-                              <span className="font-display text-base font-semibold leading-none text-fg">
-                                {Number(workout.date.slice(8, 10))}
-                              </span>
-                              <span className="mt-0.5 text-[8px] uppercase text-faint">
-                                {formatShortEs(workout.date).split(' ')[1]}
-                              </span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="truncate text-[13px] font-medium text-fg">{workout.name}</p>
-                                <span className={cn(WORKOUT_STATUS_CLASSES[workout.status], 'hidden sm:inline-flex')}>
-                                  {WORKOUT_STATUS_LABELS[workout.status]}
+                          <div key={workout.id} className="card overflow-hidden">
+                            <div className="flex items-center gap-3 px-3.5 py-3">
+                              <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg border border-line bg-raised">
+                                <span className="font-display text-base font-semibold leading-none text-fg">
+                                  {Number(workout.date.slice(8, 10))}
+                                </span>
+                                <span className="mt-0.5 text-[8px] uppercase text-faint">
+                                  {formatShortEs(workout.date).split(' ')[1]}
                                 </span>
                               </div>
-                              <p className="mt-0.5 text-[10px] tabular text-faint">
-                                {stats.effectiveSets} series · {formatNumber(stats.volume, 0)} kg
-                                {duration > 0 ? ` · ${formatDuration(duration)}` : ''}
-                              </p>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-[13px] font-medium text-fg">{workout.name}</p>
+                                  <span className="text-[10px] text-faint">{formatShortEs(workout.date)}</span>
+                                </div>
+                                <p className="mt-0.5 text-[10px] tabular text-faint">
+                                  {stats.exerciseCount} ejercicios · {stats.effectiveSets} series · {formatNumber(stats.volume, 0)} kg
+                                  {duration > 0 ? ` · ${formatDuration(duration)}` : ''}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenHistory((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(workout.id)) next.delete(workout.id)
+                                    else next.add(workout.id)
+                                    return next
+                                  })
+                                }
+                                className="btn-secondary px-3 py-1.5 text-[11px]"
+                              >
+                                {isOpen ? 'Cerrar sesión' : 'Abrir sesión'}
+                              </button>
                             </div>
-                            <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
-                          </Link>
+                            {isOpen ? (
+                              <div className="border-t border-line">
+                                <WorkoutEditor
+                                  workoutId={workout.id}
+                                  onClose={() => {
+                                    setOpenHistory((prev) => {
+                                      const next = new Set(prev)
+                                      next.delete(workout.id)
+                                      return next
+                                    })
+                                    void refetchWorkouts()
+                                  }}
+                                  inline
+                                />
+                              </div>
+                            ) : null}
+                          </div>
                         )
                       })}
                     </div>
@@ -577,7 +593,7 @@ export function TrainingPage() {
         onClose={() => setWorkoutModalOpen(false)}
         defaultDate={selectedDate}
         onSaved={() => {
-          // Refresh data after creating a workout
+          void refetchWorkouts()
         }}
       />
       <ExerciseFormModal

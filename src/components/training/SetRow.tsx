@@ -14,16 +14,26 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
   const [weight, setWeight] = useState(String(set.weightKg))
   const [reps, setReps] = useState(String(set.reps))
   const [rir, setRir] = useState(set.rir === undefined ? '' : String(set.rir))
+  const [completed, setCompleted] = useState(set.completed)
 
   useEffect(() => {
     setWeight(String(set.weightKg))
     setReps(String(set.reps))
     setRir(set.rir === undefined ? '' : String(set.rir))
-  }, [set.weightKg, set.reps, set.rir])
+    setCompleted(set.completed)
+  }, [set.weightKg, set.reps, set.rir, set.completed])
 
   const commit = () => {
-    const parsedWeight = Number(weight.replace(',', '.'))
-    const parsedReps = Number(reps.replace(',', '.'))
+    const trimmedWeight = weight.trim()
+    const trimmedReps = reps.trim()
+    // Permitir campo vacio temporalmente: no guardar, restaurar valor anterior
+    if (trimmedWeight === '' || trimmedReps === '') {
+      setWeight(String(set.weightKg))
+      setReps(String(set.reps))
+      return
+    }
+    const parsedWeight = Number(trimmedWeight.replace(',', '.'))
+    const parsedReps = Number(trimmedReps.replace(',', '.'))
     const parsedRir = rir.trim() === '' ? undefined : Number(rir.replace(',', '.'))
     if (!Number.isFinite(parsedWeight) || parsedWeight < 0 || parsedWeight > 1000) {
       setWeight(String(set.weightKg))
@@ -48,7 +58,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
     <div
       className={cn(
         'grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_44px_32px_28px] items-center gap-1.5 rounded-lg px-1 py-1 transition',
-        set.completed ? 'bg-lime-400/[0.045]' : 'bg-amber-400/[0.035]',
+        completed ? 'bg-lime-400/[0.045]' : 'bg-amber-400/[0.035]',
       )}
     >
       <button
@@ -80,7 +90,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
         onChange={(event) => setWeight(event.target.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        className={cn('input px-1.5 py-1.5 text-center text-sm tabular', !set.completed && 'border-amber-500/20')}
+        className={cn('input px-1.5 py-1.5 text-center text-sm tabular', !completed && 'border-amber-500/20')}
         aria-label={`${exerciseName}, serie ${set.setNumber}, peso en kilos`}
       />
       <input
@@ -93,7 +103,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
         onChange={(event) => setReps(event.target.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        className={cn('input px-1.5 py-1.5 text-center text-sm tabular', !set.completed && 'border-amber-500/20')}
+        className={cn('input px-1.5 py-1.5 text-center text-sm tabular', !completed && 'border-amber-500/20')}
         aria-label={`${exerciseName}, serie ${set.setNumber}, repeticiones`}
       />
       <input
@@ -113,15 +123,19 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
       />
       <button
         type="button"
-        onClick={() => onUpdate({ completed: !set.completed })}
+        onClick={() => {
+          const next = !completed
+          setCompleted(next)
+          onUpdate({ completed: next })
+        }}
         className={cn(
           'flex h-8 w-8 items-center justify-center rounded-lg border transition',
-          set.completed
+          completed
             ? 'border-lime-400/50 bg-lime-400/20 text-accent'
             : 'border-line bg-raised text-faint hover:border-lime-500/40 hover:text-accent',
         )}
-        aria-label={set.completed ? `Marcar serie ${set.setNumber} como pendiente` : `Marcar serie ${set.setNumber} como completada`}
-        title={set.completed ? 'Serie completada' : 'Marcar como completada'}
+        aria-label={completed ? `Marcar serie ${set.setNumber} como pendiente` : `Marcar serie ${set.setNumber} como completada`}
+        title={completed ? 'Serie completada' : 'Marcar como completada'}
       >
         <Check className="h-4 w-4" strokeWidth={2.5} />
       </button>

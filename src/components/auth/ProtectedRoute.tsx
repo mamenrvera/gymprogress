@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { Dumbbell } from 'lucide-react'
 
 export function ProtectedRoute() {
-  const { status } = useAuth()
+  const { status, needsOnboarding } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
@@ -28,6 +28,10 @@ export function ProtectedRoute() {
   if (status === 'unauthenticated') {
     // Guardar la ubicación a la que intentaba acceder para redirigir tras login
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (needsOnboarding && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />
   }
 
   return <Outlet />

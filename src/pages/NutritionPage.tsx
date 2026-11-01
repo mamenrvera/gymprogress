@@ -259,6 +259,7 @@ export function NutritionPage() {
                   key={block.id}
                   block={block}
                   entries={blockEntries}
+                  foods={foods}
                   collapsed={collapsedBlocks.has(block.id)}
                   onToggle={() => {
                     setCollapsedBlocks((prev) => {

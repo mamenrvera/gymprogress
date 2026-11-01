@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
-import type { FoodEntry, MealBlock, MealType } from '../../types'
+import type { Food, FoodEntry, MealBlock, MealType } from '../../types'
 import { sumEntries } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
 import { scoreFood, scoreMeal, dailyScoreLabel, gradeColor } from '../../lib/nutritionScore'
@@ -26,6 +26,7 @@ const MEAL_ICONS: Record<MealType, string> = {
 interface Props {
   block: MealBlock
   entries: FoodEntry[]
+  foods?: Food[]
   collapsed?: boolean
   onToggle: () => void
   onAdd: () => void
@@ -34,8 +35,10 @@ interface Props {
   onDeleteBlock: () => void
 }
 
-export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock }: Props) {
+export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAdd, onEditEntry, onDeleteEntry, onDeleteBlock }: Props) {
   const totals = sumEntries(entries)
+  const foodMap = new Map((foods ?? []).map((f) => [f.id, f]))
+  const resolveNS = (e: FoodEntry) => e.nutriScore ?? (e.foodId ? foodMap.get(e.foodId)?.nutriScore : undefined)
   const label = block.title || MEAL_LABELS[block.mealType]
   const time = new Date(block.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
   const mealScore = entries.length > 0
@@ -109,7 +112,7 @@ export function MealBlockCard({ block, entries, collapsed, onToggle, onAdd, onEd
                               className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint"
                               title="Nutri-Score oficial"
                             >
-                              NS:{entry.nutriScore ?? '—'}
+                              NS:{resolveNS(entry) ?? '—'}
                             </span>
                             {entry.novaGroup && (
                               <span className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint">

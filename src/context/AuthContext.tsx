@@ -21,6 +21,7 @@ export interface AuthContextValue {
   status: AuthStatus
   error: string | null
   isPasswordRecovery: boolean
+  needsOnboarding: boolean
 
   // Utilidades
   checkEmailExists: (email: string) => Promise<boolean>
@@ -33,8 +34,8 @@ export interface AuthContextValue {
   updatePassword: (newPassword: string) => Promise<void>
 
   // Acciones de perfil
-  updateProfile: (updates: Partial<Profile>) => Promise<void>
-  updateTargets: (updates: Partial<Targets>) => Promise<void>
+  updateProfile: (updates: Partial<Profile>) => Promise<Profile | null>
+  updateTargets: (updates: Partial<Targets>) => Promise<Targets | null>
 
   // Utilidades
   refreshSession: () => Promise<void>
@@ -281,32 +282,34 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Acciones de perfil
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
-    if (!user) return
+    if (!user) return null
     try {
       const { upsertProfile } = await import('../lib/supabase')
       const updated = await upsertProfile(user.id, updates)
       if (updated) setProfile(updated)
       console.log('[Auth] Perfil actualizado')
+      return updated
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al actualizar perfil'
       setError(msg)
       console.error('[Auth]', msg)
-      throw e
+      return null
     }
   }, [user])
 
   const updateTargets = useCallback(async (updates: Partial<Targets>) => {
-    if (!user) return
+    if (!user) return null
     try {
       const { upsertTargets } = await import('../lib/supabase')
       const updated = await upsertTargets(user.id, updates)
       if (updated) setTargets(updated)
       console.log('[Auth] Objetivos actualizados')
+      return updated
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al actualizar objetivos'
       setError(msg)
       console.error('[Auth]', msg)
-      throw e
+      return null
     }
   }, [user])
 
@@ -331,6 +334,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     status,
     error,
     isPasswordRecovery,
+    needsOnboarding: profile !== null && profile.onboarding_completed === false,
     signUp,
     signIn,
     signOut,

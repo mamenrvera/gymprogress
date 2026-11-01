@@ -60,10 +60,13 @@ async function bootstrap() {
       window.location.reload()
     })
 
-    registerSW({
+    const updateSW = registerSW({
       immediate: true,
       onRegistered(registration) {
         if (registration) {
+          if (registration.waiting) {
+            updateSW(true)
+          }
           // Comprobar actualizaciones periódicamente (cada hora)
           // para PWAs instaladas que permanecen abiertas.
           setInterval(() => {
@@ -77,6 +80,22 @@ async function bootstrap() {
         console.error('[PWA] Error al registrar el service worker:', error)
       },
     })
+
+    // Activar un SW en espera si lo hubiera
+    // (registerSW con autoUpdate ya lo hace, esto es defensivo)
+    // Recuperacion: si falla la carga de un recurso tras una actualizacion,
+    // recargar una sola vez para intentar recuperar la version actual.
+    let recovered = false
+    window.addEventListener('error', (event) => {
+      const target = event.target as (HTMLElement & { src?: string; href?: string }) | null
+      const url = target?.src || target?.href
+      if (!url || recovered) return
+      if (url.includes('/assets/') && (url.endsWith('.js') || url.endsWith('.css'))) {
+        recovered = true
+        console.warn('[PWA] Error cargando recurso, recargando para recuperar:', url)
+        setTimeout(() => window.location.reload(), 300)
+      }
+    }, true)
   }
 }
 

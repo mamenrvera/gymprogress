@@ -20,6 +20,18 @@ export interface Database {
           initial_weight_kg: number | null
           height_cm: number | null
           goal: string | null
+          age: number | null
+          sex: string | null
+          activity_level: string | null
+          steps_per_day: number | null
+          strength_days_per_week: number | null
+          strength_session_minutes: number | null
+          strength_level: string | null
+          cardio_activities: unknown | null
+          target_origin: string | null
+          onboarding_completed: boolean | null
+          onboarding_version: number | null
+          configured_at: string | null
           created_at: string
           updated_at: string
         }
@@ -29,6 +41,18 @@ export interface Database {
           initial_weight_kg?: number | null
           height_cm?: number | null
           goal?: string | null
+          age?: number | null
+          sex?: string | null
+          activity_level?: string | null
+          steps_per_day?: number | null
+          strength_days_per_week?: number | null
+          strength_session_minutes?: number | null
+          strength_level?: string | null
+          cardio_activities?: unknown | null
+          target_origin?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_version?: number | null
+          configured_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -38,6 +62,18 @@ export interface Database {
           initial_weight_kg?: number | null
           height_cm?: number | null
           goal?: string | null
+          age?: number | null
+          sex?: string | null
+          activity_level?: string | null
+          steps_per_day?: number | null
+          strength_days_per_week?: number | null
+          strength_session_minutes?: number | null
+          strength_level?: string | null
+          cardio_activities?: unknown | null
+          target_origin?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_version?: number | null
+          configured_at?: string | null
           created_at?: string
           updated_at?: string
         }

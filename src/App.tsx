@@ -9,12 +9,15 @@ import { TrainingPage } from './pages/TrainingPage'
 import { WorkoutEditorPage } from './pages/WorkoutEditorPage'
 import { ProgressPage } from './pages/ProgressPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
 import { LoginPage } from './pages/auth/LoginPage'
 import { RegisterPage } from './pages/auth/RegisterPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { ProtectedRoute, PublicOnlyRoute } from './components/auth/ProtectedRoute'
 import { Button } from './components/ui/Button'
+import { useState } from 'react'
+import { useAuth } from './context/AuthContext'
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -63,6 +66,53 @@ function NotFoundPage() {
   )
 }
 
+
+function OnboardingPage() {
+  const { user, profile, updateProfile, updateTargets } = useAuth()
+  const [onboardingError, setOnboardingError] = useState<string | null>(null)
+  const handleComplete = async (data: any, recommended: any) => {
+    if (!user) return
+    setOnboardingError(null)
+    try {
+      const r = recommended
+      const calories = data.hasDiet ? data.manualCalories : (r?.calories ?? 2000)
+      const protein = data.hasDiet ? data.manualProtein : (r?.protein ?? 150)
+      const carbs = data.hasDiet ? data.manualCarbs : (r?.carbs ?? 200)
+      const fat = data.hasDiet ? data.manualFat : (r?.fat ?? 70)
+      const updated = await updateProfile({
+        name: data.name,
+        initial_weight_kg: data.weightKg,
+        height_cm: data.heightCm,
+        goal: data.goal,
+        age: data.age,
+        sex: data.sex,
+        activity_level: data.activityLevel,
+        steps_per_day: data.stepsPerDay,
+        strength_days_per_week: data.strengthDaysPerWeek,
+        strength_session_minutes: data.strengthSessionMinutes,
+        strength_level: data.strengthLevel,
+        cardio_activities: data.cardio,
+        target_origin: data.hasDiet ? 'manual' : 'recommended',
+        onboarding_completed: true,
+        onboarding_version: 1,
+        configured_at: new Date().toISOString(),
+      } as any)
+      if (!updated) throw new Error('No se pudo guardar el perfil. Verifica que la migración 022 esté aplicada en Supabase.')
+      await updateTargets({ calories, protein, carbs, fat, carb_min: Math.round(carbs * 0.9), carb_max: Math.round(carbs * 1.1) })
+      window.location.replace('/')
+    } catch (e) {
+      console.error(e)
+      setOnboardingError(e instanceof Error ? e.message : 'Error al guardar. Inténtalo de nuevo.')
+    }
+  }
+  return (
+    <div>
+      {onboardingError && <div className="mb-4 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-sm text-rose-400">{onboardingError}</div>}
+      <OnboardingWizard initialName={profile?.name || ''} onComplete={handleComplete} />
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <AppErrorBoundary>
@@ -79,6 +129,7 @@ export default function App() {
 
           {/* Rutas privadas (requieren autenticación) */}
           <Route element={<ProtectedRoute />}>
+            <Route path="onboarding" element={<OnboardingPage />} />
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="alimentacion" element={<NutritionPage />} />

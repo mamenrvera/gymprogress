@@ -110,33 +110,53 @@ export async function fetchEntriesFromSupabase(userId: string): Promise<FoodEntr
     console.error('[Supabase] Error fetching entries:', msg, error)
     throw new Error(`Error al cargar entradas: ${msg}`)
   }
-  return (data || []).map((row: Record<string, unknown>) => ({
-    id: row.id as string,
-    date: row.date as string,
-    meal: row.meal as MealType,
-    mealBlockId: row.meal_block_id as string | undefined,
-    foodId: row.food_id as string | undefined,
-    foodName: row.food_name as string,
-    brand: row.brand as string | undefined,
-    nutriScore: row.nutri_score as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
-    novaGroup: row.nova_group as 1 | 2 | 3 | 4 | undefined,
-    grams: row.grams as number,
-    per100: {
-      calories: row.calories_declared as number / (row.grams as number / 100),
-      protein: row.protein as number / (row.grams as number / 100),
-      carbs: row.carbs as number / (row.grams as number / 100),
-      fat: row.fat as number / (row.grams as number / 100),
-      fiber: row.fiber as number / (row.grams as number / 100),
-    },
-    caloriesDeclared: row.calories_declared as number,
-    caloriesEstimated: row.calories_estimated as number,
-    protein: row.protein as number,
-    carbs: row.carbs as number,
-    fat: row.fat as number,
-    fiber: row.fiber as number,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  }))
+
+  // Cargar alimentos del usuario para recuperar Nutri-Score/NOVA cuando la entrada no los tenga
+  let foodMap = new Map<string, { nutri_score?: string | null; nova_group?: number | null }>()
+  try {
+    const { data: foods } = await (supabase as any).from('foods').select('id, nutri_score, nova_group').eq('user_id', userId)
+    for (const f of foods || []) {
+      foodMap.set(f.id as string, { nutri_score: f.nutri_score, nova_group: f.nova_group })
+    }
+  } catch {
+    // continuar sin fallback
+  }
+
+  const mapped = (data || []).map((row: Record<string, unknown>) => {
+    const foodId = row.food_id as string | undefined
+    const foodInfo = foodId ? foodMap.get(foodId) : undefined
+    const nutriScore = (row.nutri_score as string | null | undefined) ?? foodInfo?.nutri_score ?? undefined
+    const novaGroup = (row.nova_group as number | null | undefined) ?? foodInfo?.nova_group ?? undefined
+
+    return {
+      id: row.id as string,
+      date: row.date as string,
+      meal: row.meal as MealType,
+      mealBlockId: row.meal_block_id as string | undefined,
+      foodId: row.food_id as string | undefined,
+      foodName: row.food_name as string,
+      brand: row.brand as string | undefined,
+      nutriScore: nutriScore as 'A' | 'B' | 'C' | 'D' | 'E' | undefined,
+      novaGroup: novaGroup as 1 | 2 | 3 | 4 | undefined,
+      grams: row.grams as number,
+      per100: {
+        calories: row.calories_declared as number / (row.grams as number / 100),
+        protein: row.protein as number / (row.grams as number / 100),
+        carbs: row.carbs as number / (row.grams as number / 100),
+        fat: row.fat as number / (row.grams as number / 100),
+        fiber: row.fiber as number / (row.grams as number / 100),
+      },
+      caloriesDeclared: row.calories_declared as number,
+      caloriesEstimated: row.calories_estimated as number,
+      protein: row.protein as number,
+      carbs: row.carbs as number,
+      fat: row.fat as number,
+      fiber: row.fiber as number,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    }
+  })
+  return mapped
 }
 
 export async function upsertEntryToSupabase(entry: FoodEntry, userId: string): Promise<void> {

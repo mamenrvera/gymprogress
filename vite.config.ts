@@ -3,6 +3,21 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+function versionJsonPlugin() {
+  return {
+    name: 'version-json',
+    generateBundle() {
+      const version = (globalThis as any).process?.env?.VITE_APP_VERSION || '1.0.0'
+      const ctx = this as any
+      ctx.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ version, buildTime: new Date().toISOString() }),
+      })
+    },
+  }
+}
+
 export default defineConfig({
   server: {
     host: true,
@@ -16,6 +31,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    versionJsonPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],

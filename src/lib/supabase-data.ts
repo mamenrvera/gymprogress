@@ -820,3 +820,118 @@ export async function deleteMealBlockFromSupabase(id: string, userId: string): P
 }
 
 export { getCurrentUserId }
+
+// ============================================================
+// RUTINAS
+// ============================================================
+export async function fetchRoutinesFromSupabase(userId: string): Promise<import('../types').Routine[]> {
+  const { data, error } = await (supabase as any).from('routines').select('*').eq('user_id', userId).order('created_at')
+  if (error) {
+    console.error('[Supabase] fetchRoutines error:', error?.message, 'code:', error?.code, 'details:', error?.details, 'hint:', error?.hint)
+    throw error
+  }
+  return (data || []).map((r: any) => ({
+    id: r.id, userId: r.user_id, name: r.name, description: r.description, muscleGroup: r.muscle_group,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }))
+}
+
+export async function upsertRoutineToSupabase(r: import('../types').Routine, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routines').upsert({
+    id: r.id, user_id: userId, name: r.name, description: r.description, muscle_group: r.muscleGroup,
+    created_at: r.createdAt, updated_at: r.updatedAt,
+  }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteRoutineFromSupabase(id: string, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routines').delete().eq('id', id).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function fetchRoutineExercisesFromSupabase(routineId: string): Promise<import('../types').RoutineExercise[]> {
+  const { data, error } = await (supabase as any).from('routine_exercises').select('*').eq('routine_id', routineId).order('order_index')
+  if (error) throw error
+  return (data || []).map((r: any) => ({
+    id: r.id, routineId: r.routine_id, userId: r.user_id, exerciseId: r.exercise_id, exerciseName: r.exercise_name,
+    muscleGroup: r.muscle_group, order: r.order_index, setsCount: r.sets_count, repsTarget: r.reps_target,
+    weightKg: r.weight_kg, restSeconds: r.rest_seconds, notes: r.notes, createdAt: r.created_at,
+  }))
+}
+
+export async function upsertRoutineExerciseToSupabase(re: import('../types').RoutineExercise, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_exercises').upsert({
+    id: re.id, routine_id: re.routineId, user_id: userId, exercise_id: re.exerciseId, exercise_name: re.exerciseName,
+    muscle_group: re.muscleGroup, order_index: re.order, sets_count: re.setsCount, reps_target: re.repsTarget,
+    weight_kg: re.weightKg, rest_seconds: re.restSeconds, notes: re.notes, created_at: re.createdAt,
+  }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteRoutineExerciseFromSupabase(id: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_exercises').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchRoutineSchedulesFromSupabase(userId: string): Promise<import('../types').RoutineSchedule[]> {
+  const { data, error } = await (supabase as any).from('routine_schedules').select('*').eq('user_id', userId)
+  if (error) {
+    console.error('[Supabase] fetchRoutineSchedules error:', error?.message, 'code:', error?.code, 'details:', error?.details, 'hint:', error?.hint)
+    throw error
+  }
+  return (data || []).map((r: any) => ({
+    id: r.id, userId: r.user_id, routineId: r.routine_id, scheduleType: r.schedule_type,
+    specificDate: r.specific_date, weekdays: r.weekdays || [], startDate: r.start_date, endDate: r.end_date,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }))
+}
+
+export async function upsertRoutineScheduleToSupabase(sch: import('../types').RoutineSchedule, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_schedules').upsert({
+    id: sch.id, user_id: userId, routine_id: sch.routineId, schedule_type: sch.scheduleType,
+    specific_date: sch.specificDate, weekdays: sch.weekdays, start_date: sch.startDate, end_date: sch.endDate,
+    created_at: sch.createdAt, updated_at: sch.updatedAt,
+  }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteRoutineScheduleFromSupabase(id: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_schedules').delete().eq('id', id)
+  if (error) throw error
+}
+
+
+// ============================================================
+// RUTINE SETS
+// ============================================================
+export async function fetchRoutineSetsFromSupabase(routineExerciseId: string): Promise<import('../types').RoutineSet[]> {
+  const { data, error } = await (supabase as any).from('routine_sets').select('*').eq('routine_exercise_id', routineExerciseId).order('set_number')
+  if (error) {
+    console.error('[Supabase] fetchRoutineSets error:', error?.message, 'code:', error?.code, 'details:', error?.details, 'hint:', error?.hint)
+    throw error
+  }
+  return (data || []).map((r: any) => ({
+    id: r.id, routineExerciseId: r.routine_exercise_id, routineId: r.routine_id, userId: r.user_id,
+    setNumber: r.set_number, weightKg: r.weight_kg, reps: r.reps, rir: r.rir, isWarmup: r.is_warmup ?? false,
+    restSeconds: r.rest_seconds, createdAt: r.created_at,
+  }))
+}
+
+export async function upsertRoutineSetToSupabase(rs: import('../types').RoutineSet, userId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_sets').upsert({
+    id: rs.id, routine_exercise_id: rs.routineExerciseId, routine_id: rs.routineId, user_id: userId,
+    set_number: rs.setNumber, weight_kg: rs.weightKg, reps: rs.reps, rir: rs.rir, is_warmup: rs.isWarmup,
+    rest_seconds: rs.restSeconds, created_at: rs.createdAt,
+  }, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteRoutineSetFromSupabase(id: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_sets').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteRoutineSetsByExerciseFromSupabase(routineExerciseId: string): Promise<void> {
+  const { error } = await (supabase as any).from('routine_sets').delete().eq('routine_exercise_id', routineExerciseId)
+  if (error) throw error
+}

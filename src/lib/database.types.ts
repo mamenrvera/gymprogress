@@ -304,6 +304,7 @@ export interface Database {
           notes: string | null
           started_at: string | null
           finished_at: string | null
+          routine_id: string | null
           created_at: string
           updated_at: string
         }
@@ -316,6 +317,7 @@ export interface Database {
           notes?: string | null
           started_at?: string | null
           finished_at?: string | null
+          routine_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -328,6 +330,7 @@ export interface Database {
           notes?: string | null
           started_at?: string | null
           finished_at?: string | null
+          routine_id?: string | null
           created_at?: string
           updated_at?: string
         }

@@ -6,11 +6,12 @@ import { cn } from '../../lib/cn'
 interface SetRowProps {
   set: WorkoutSet
   exerciseName: string
+  showCompleted?: boolean
   onUpdate: (patch: Partial<Pick<WorkoutSet, 'weightKg' | 'reps' | 'rir' | 'isWarmup' | 'completed'>>) => void
   onDelete: () => void
 }
 
-export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
+export function SetRow({ set, exerciseName, showCompleted = true, onUpdate, onDelete }: SetRowProps) {
   const [weight, setWeight] = useState(String(set.weightKg))
   const [reps, setReps] = useState(String(set.reps))
   const [rir, setRir] = useState(set.rir === undefined ? '' : String(set.rir))
@@ -57,7 +58,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
   return (
     <div
       className={cn(
-        'grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_44px_32px_28px] items-center gap-1.5 rounded-lg px-1 py-1 transition',
+        (showCompleted ? 'grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_44px_32px_28px]' : 'grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_44px_28px]') + ' items-center gap-1.5 rounded-lg px-1 py-1 transition',
         completed ? 'bg-lime-400/[0.045]' : 'bg-amber-400/[0.035]',
       )}
     >
@@ -121,6 +122,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
         aria-label={`${exerciseName}, serie ${set.setNumber}, RIR`}
         title="RIR: repeticiones en reserva (opcional)"
       />
+      {showCompleted && (
       <button
         type="button"
         onClick={() => {
@@ -139,6 +141,7 @@ export function SetRow({ set, exerciseName, onUpdate, onDelete }: SetRowProps) {
       >
         <Check className="h-4 w-4" strokeWidth={2.5} />
       </button>
+      )}
       <button
         type="button"
         onClick={onDelete}

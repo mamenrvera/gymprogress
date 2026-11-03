@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Camera, Check, FileImage } from 'lucide-react'
-import { scoreFood, gradeColor } from '../../lib/nutritionScore'
 import { LabelScannerModal } from './LabelScannerModal'
 import type { ParsedLabel } from '../../lib/nutritionLabelOcr'
 import type { MealType } from '../../types'
@@ -76,7 +75,6 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
     salt: salt ? Number(salt.replace(',', '.')) : undefined,
   }
   const preview = per100.calories >= 0 ? nutritionForGrams(per100, parsedGrams) : null
-  const foodScore = scoreFood({ per100, name, category: undefined })
 
   const handleLabelResult = (parsed: ParsedLabel) => {
     if (parsed.caloriesPer100 !== null) setCalories(String(parsed.caloriesPer100))
@@ -145,13 +143,27 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
             <p className="text-sm font-semibold text-fg">{product.name || 'Producto sin nombre'}</p>
             {product.brand && <p className="text-xs text-muted">{product.brand}</p>}
             <p className="text-[10px] text-faint mt-1">Código: {product.barcode}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-fg">
-                Nutri-Score oficial: {product.nutriScore ?? 'No disponible'}
-              </span>
-              {product.novaGroup && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(() => {
+                const ns = product.nutriScore
+                const color = ns === 'A' ? '#038141' : ns === 'B' ? '#85BB2F' : ns === 'C' ? '#FECB02' : ns === 'D' ? '#EE8100' : ns === 'E' ? '#E63E11' : null
+                return color ? (
+                  <span className="rounded-md px-2 py-0.5 text-[10px] font-bold text-white" style={{ backgroundColor: color }}>
+                    Nutri-Score: {ns}
+                  </span>
+                ) : (
+                  <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-faint">
+                    Nutri-Score: Sin datos
+                  </span>
+                )
+              })()}
+              {product.novaGroup ? (
                 <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-fg">
-                  NOVA: {product.novaGroup}
+                  NOVA {product.novaGroup} · {product.novaGroup === 1 ? 'No procesado' : product.novaGroup === 2 ? 'Ingredientes culinarios' : product.novaGroup === 3 ? 'Procesado' : 'Ultraprocesado'}
+                </span>
+              ) : (
+                <span className="rounded-md border border-line bg-raised px-2 py-0.5 text-[10px] font-semibold text-faint">
+                  NOVA: Sin datos
                 </span>
               )}
             </div>
@@ -163,14 +175,6 @@ export function BarcodeConfirmModal({ open, product, date, defaultMeal = 'almuer
             Faltan datos nutricionales: {missing.join(', ')}. Complétalos manualmente a partir de la etiqueta.
           </div>
         )}
-
-        <div className="flex items-center gap-2 rounded-xl border border-line bg-raised/50 px-3 py-2 text-xs">
-          <span className="text-muted">Calidad GymProgress (propia):</span>
-          <span className={`rounded-md border px-2 py-0.5 font-semibold ${gradeColor(foodScore.grade)}`}>
-            {foodScore.grade} · {foodScore.score}/100
-          </span>
-          <span className="text-faint truncate">{foodScore.explanation}</span>
-        </div>
 
         <button
           type="button"

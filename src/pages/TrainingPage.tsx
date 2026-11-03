@@ -6,6 +6,7 @@ import {
   HeartPulse,
   Pencil,
   Plus,
+  Play,
   Search,
   Trash2,
 } from 'lucide-react'
@@ -33,10 +34,11 @@ import {
   weekLabel,
 } from '../lib/dates'
 import { formatNumber } from '../lib/format'
-import { deleteExercise, createWorkout } from '../lib/repositories'
+import { deleteExercise, createWorkout, fetchRoutines, fetchRoutineSchedules, startWorkoutFromRoutine } from '../lib/repositories'
 import { cn } from '../lib/cn'
 import { useWorkouts, useWorkoutExercises, useSets, useExercises, useCardioSessions } from '../hooks/useSupabaseData'
 import { ExercisePhoto } from '../components/training/ExercisePhoto'
+import { RoutinesTab } from '../components/training/RoutinesTab'
 import { WorkoutEditor } from '../components/training/WorkoutEditor'
 import { CardioFormModal } from '../components/training/CardioFormModal'
 import { deleteCardioSession } from '../lib/repositories'
@@ -54,13 +56,38 @@ export function TrainingPage() {
   const { user } = useAuth()
   const isAdmin = user?.email === 'mamenromerovera@gmail.com'
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') === 'ejercicios' ? 'ejercicios' : 'sesiones'
+  const tabParam = searchParams.get('tab')
+  const tab = tabParam === 'ejercicios' ? 'ejercicios' : tabParam === 'rutinas' ? 'rutinas' : 'sesiones'
 
   const { data: workoutsData, loading: workoutsLoading, refetch: refetchWorkouts } = useWorkouts()
   const { data: workoutExercisesData } = useWorkoutExercises()
   const { data: setsData } = useSets()
   const { data: exercisesData } = useExercises()
   const { data: cardioData } = useCardioSessions()
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [rts, ss] = await Promise.all([fetchRoutines(), fetchRoutineSchedules()])
+        const day = selectedDate
+        const dow = new Date(day).getDay()
+        const matches = ss.filter((sch) => {
+          if (sch.startDate > day || sch.endDate < day) return false
+          if (sch.scheduleType === 'date') return sch.specificDate === day
+          return (sch.weekdays || []).includes(dow)
+        })
+        const list = matches.map((sch) => {
+          const r = rts.find((x) => x.id === sch.routineId)
+          return r ? { routine: r, schedule: sch } : null
+        }).filter(Boolean) as any[]
+        if (!cancelled) setScheduledRoutines(list)
+      } catch {
+        if (!cancelled) setScheduledRoutines([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedDate])
 
   const workouts = workoutsData ?? []
 
@@ -103,6 +130,7 @@ export function TrainingPage() {
 
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
   const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null)
+  const [scheduledRoutines, setScheduledRoutines] = useState<{ routine: any; schedule: any }[]>([])
   const [openHistory, setOpenHistory] = useState<Set<string>>(new Set())
   const [exerciseModalOpen, setExerciseModalOpen] = useState(false)
   const [editingExercise, setEditingExercise] = useState<Exercise | undefined>(undefined)
@@ -162,9 +190,10 @@ export function TrainingPage() {
     return Array.from(groups.entries())
   }, [workouts, selectedDate, historySearch])
 
-  const setTab = (nextTab: 'sesiones' | 'ejercicios') => {
+  const setTab = (nextTab: 'sesiones' | 'ejercicios' | 'rutinas') => {
     const next = new URLSearchParams(searchParams)
     if (nextTab === 'ejercicios') next.set('tab', 'ejercicios')
+    else if (nextTab === 'rutinas') next.set('tab', 'rutinas')
     else next.delete('tab')
     setSearchParams(next, { replace: true })
   }
@@ -229,15 +258,6 @@ export function TrainingPage() {
 
       <DateNavigator />
 
-      {activeWorkoutId ? (
-        <div className="card-pad">
-          <WorkoutEditor
-            workoutId={activeWorkoutId}
-            onClose={() => { setActiveWorkoutId(null); void refetchWorkouts() }}
-          />
-        </div>
-      ) : null}
-
       <div className="segmented" role="tablist" aria-label="Secciones de entrenamiento">
         <button
           type="button"
@@ -258,9 +278,20 @@ export function TrainingPage() {
           <Dumbbell className="h-3.5 w-3.5" /> Ejercicios
           <span className="rounded-full bg-line px-1.5 py-0.5 text-[9px] tabular">{exercises.length}</span>
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'rutinas'}
+          onClick={() => setTab('rutinas')}
+          className={cn('segmented-item flex items-center gap-1.5', tab === 'rutinas' && 'segmented-item-active')}
+        >
+          <CalendarDays className="h-3.5 w-3.5" /> Rutinas
+        </button>
       </div>
 
-      {tab === 'sesiones' ? (
+      {tab === 'rutinas' ? (
+        <RoutinesTab onWorkoutCreated={(id) => setActiveWorkoutId(id)} />
+      ) : tab === 'sesiones' ? (
         <div className="space-y-5">
           <section className="card-pad bg-gradient-to-br from-surface to-lime-400/[0.035]">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -295,12 +326,35 @@ export function TrainingPage() {
             </div>
           </section>
 
-          <section>
+                    {scheduledRoutines.length > 0 && (
+            <div className="card-pad space-y-2">
+              <p className="text-xs font-semibold text-fg">Rutinas programadas para hoy</p>
+              {scheduledRoutines.map(({ routine }) => (
+                <div key={routine.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-raised/50 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg truncate">{routine.name}</p>
+                    {routine.muscleGroup && <p className="text-[10px] text-faint">{routine.muscleGroup}</p>}
+                  </div>
+                  <Button size="sm" onClick={() => void (async () => { try { const w = await startWorkoutFromRoutine(routine.id, selectedDate); notify('Sesión creada desde la rutina'); setActiveWorkoutId(w.id); void refetchWorkouts() } catch (e) { notify(e instanceof Error ? e.message : 'No se pudo iniciar', 'error') } })()}>
+                    <Play className="h-3.5 w-3.5" /> Iniciar entrenamiento
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+<section>
             <div className="mb-2.5 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-fg">Sesiones del día seleccionado</h2>
               <span className="text-[10px] text-faint">{formatShortEs(selectedDate)}</span>
             </div>
-            {selectedWorkouts.length === 0 ? (
+            {activeWorkoutId ? (
+              <div className="card overflow-hidden">
+                <WorkoutEditor workoutId={activeWorkoutId} onClose={() => { setActiveWorkoutId(null); void refetchWorkouts() }} inline />
+              </div>
+            ) : null}
+
+            {selectedWorkouts.length === 0 && !activeWorkoutId ? (
               <div className="card">
                 <EmptyState
                   icon={<Dumbbell className="h-5 w-5" />}

@@ -220,6 +220,59 @@ export interface WorkoutSet {
   updatedAt: string
 }
 
+export interface Routine {
+  id: string
+  userId: string
+  name: string
+  description?: string
+  muscleGroup?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RoutineExercise {
+  id: string
+  routineId: string
+  userId: string
+  exerciseId?: string
+  exerciseName: string
+  muscleGroup: MuscleGroup
+  order: number
+  setsCount: number
+  repsTarget: number
+  weightKg?: number
+  restSeconds?: number
+  notes?: string
+  createdAt: string
+}
+
+export interface RoutineSet {
+  id: string
+  routineExerciseId: string
+  routineId: string
+  userId: string
+  setNumber: number
+  weightKg?: number
+  reps?: number
+  rir?: number
+  isWarmup: boolean
+  restSeconds?: number
+  createdAt: string
+}
+
+export interface RoutineSchedule {
+  id: string
+  userId: string
+  routineId: string
+  scheduleType: 'date' | 'weekly'
+  specificDate?: string
+  weekdays: number[]
+  startDate: string
+  endDate: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface BodyWeight {
   id: string
   date: string

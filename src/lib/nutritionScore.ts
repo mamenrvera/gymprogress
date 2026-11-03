@@ -4,8 +4,10 @@
  * Algoritmo inspirado en Nutri-Score (Santé Publique France), adaptado y
  * documentado para GymProgress. Versión 1.
  *
- * - Puntuación de alimento: 0-100 + letra A-E.
- * - Puntuación diaria: 1-10.
+ * Tres niveles independientes:
+ * - Clasificación del producto: Nutri-Score oficial (A-E) y NOVA (1-4), de Open Food Facts.
+ * - Puntuación de la ingesta (comida): 1-10, evalúa el conjunto de alimentos y cantidades.
+ * - Puntuación diaria: 1-10, evalúa el conjunto del día.
  *
  * Los valores se calculan a partir de los datos nutricionales por 100 g/ml.
  * No se almacenan permanentemente; se recalculan bajo demanda.
@@ -15,15 +17,13 @@ import type { NutritionPer100 } from '../types'
 
 export const SCORE_ALGORITHM_VERSION = 1
 
-// ============================================================
-// PUNTUACIÓN DE ALIMENTO (0-100 + letra A-E)
-// ============================================================
-
 export interface FoodScoreInput {
   per100: NutritionPer100
   category?: string
   baseUnit?: '100g' | '100ml'
   name?: string
+  nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
+  novaGroup?: 1 | 2 | 3 | 4
 }
 
 export interface FoodScoreResult {
@@ -36,13 +36,11 @@ export interface FoodScoreResult {
   explanation: string
 }
 
-// Nutri-Score negative points thresholds (per 100g), for kcal (energy)
 const ENERGY_THRESHOLDS_KCAL = [80, 160, 240, 320, 400, 480, 560, 640, 720, 800]
 const SUGAR_THRESHOLDS = [4.5, 9, 13.5, 18, 22.5, 27, 31.5, 36, 40.5, 45]
 const SATFAT_THRESHOLDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const SALT_THRESHOLDS = [0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]
 
-// Positive points thresholds
 const FIBER_THRESHOLDS = [0.9, 1.9, 2.8, 3.7, 4.7]
 const PROTEIN_THRESHOLDS = [1.6, 3.2, 4.8, 6.4, 8.0]
 
@@ -71,17 +69,15 @@ function gradeFromScore(score: number): 'A' | 'B' | 'C' | 'D' | 'E' {
 const HEALTHY_CATEGORIES = ['Frutas', 'Verduras', 'Grasas y frutos secos', 'Legumbres']
 
 export function scoreFood(input: FoodScoreInput): FoodScoreResult {
-  const { per100, category, name } = input
+  const { per100, category, name, nutriScore, novaGroup } = input
   const positive: string[] = []
   const negative: string[] = []
   const missing: string[] = []
 
-  // Check missing data
   if (per100.calories === undefined || per100.calories === null) missing.push('Calorías')
   if (per100.protein === undefined || per100.protein === null) missing.push('Proteínas')
   if (per100.carbs === undefined || per100.carbs === null) missing.push('Carbohidratos')
   if (per100.fat === undefined || per100.fat === null) missing.push('Grasas')
-  // fiber and salt optional
 
   const allZero = (per100.calories ?? 0) === 0 && (per100.protein ?? 0) === 0 && (per100.carbs ?? 0) === 0 && (per100.fat ?? 0) === 0
   const hasCoreData = per100.calories != null && per100.protein != null && per100.carbs != null && per100.fat != null && !allZero
@@ -110,31 +106,26 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
   const saturatedFat = per100.saturatedFat ?? null
   const salt = per100.salt ?? null
 
-  // Track missing data
   if (sugars === null) missing.push('Azúcares')
   if (saturatedFat === null) missing.push('Grasas saturadas')
   if (salt === null) missing.push('Sal')
 
-  // Negative points
   const energyPts = negativePoints(calories, ENERGY_THRESHOLDS_KCAL)
-  // Use sugars if available, otherwise use a fraction of carbs as estimate (not all carbs are sugar)
-  const sugarValue = sugars !== null ? sugars : carbs * 0.1 // conservative estimate: 10% of carbs are sugars
+  const sugarValue = sugars !== null ? sugars : carbs * 0.3
   const sugarPts = negativePoints(sugarValue, SUGAR_THRESHOLDS)
-  const satFatPts = saturatedFat !== null ? negativePoints(saturatedFat, SATFAT_THRESHOLDS) : 0
-  const saltPts = salt !== null ? negativePoints(salt, SALT_THRESHOLDS) : 0
+  // Missing satfat/salt: conservative penalty of 3 instead of 0
+  const satFatPts = saturatedFat !== null ? negativePoints(saturatedFat, SATFAT_THRESHOLDS) : 3
+  const saltPts = salt !== null ? negativePoints(salt, SALT_THRESHOLDS) : 3
 
-  // Positive points
   const fiberPts = positivePoints(fiber, FIBER_THRESHOLDS)
-  // Protein only counts if negative total < 11 (to avoid junk food scoring well)
   const negativeTotal = energyPts + sugarPts + satFatPts + saltPts
-  const proteinPts = negativeTotal < 11 ? positivePoints(protein, PROTEIN_THRESHOLDS) : 0
+  const rawProteinPts = negativeTotal < 11 ? positivePoints(protein, PROTEIN_THRESHOLDS) : 0
+  const proteinPts = Math.min(rawProteinPts, Math.max(0, negativeTotal - 2))
 
-  // Category bonus (healthy foods) — reduced to avoid over-scoring
   let categoryBonus = 0
   if (category && HEALTHY_CATEGORIES.includes(category)) {
     categoryBonus = 3
   }
-  // Name-based heuristic for nuts/oil/avocado — reduced to avoid over-scoring
   const nameLower = (name || '').toLowerCase()
   if (/nuez|almendra|cacahuete|avellana|pistacho|anacardo|aceite|aguacate|oliva/i.test(nameLower)) {
     categoryBonus = Math.max(categoryBonus, 3)
@@ -142,14 +133,22 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
 
   const positiveTotal = fiberPts + proteinPts + categoryBonus
 
-  // Raw score (negative - positive), range roughly -15 to 40
-  const raw = negativeTotal - positiveTotal
+  let officialAdjustment = 0
+  if (nutriScore === 'E') officialAdjustment -= 6
+  else if (nutriScore === 'D') officialAdjustment -= 4
+  else if (nutriScore === 'C') officialAdjustment -= 1
+  else if (nutriScore === 'A') officialAdjustment += 2
+  else if (nutriScore === 'B') officialAdjustment += 1
 
-  // Map raw to 0-100
+  let novaAdjustment = 0
+  if (novaGroup === 4) novaAdjustment -= 4
+  else if (novaGroup === 3) novaAdjustment -= 2
+
+  const raw = negativeTotal - positiveTotal - (officialAdjustment + novaAdjustment)
+
   let score = Math.round(100 - raw * 3.0)
   score = Math.max(0, Math.min(100, score))
 
-  // Build positive/negative lists
   if (fiberPts >= 3) positive.push('rico en fibra')
   if (proteinPts >= 3) positive.push('buen contenido en proteínas')
   if (satFatPts <= 2 && fat > 0) positive.push('bajo en grasas saturadas')
@@ -163,10 +162,8 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
   if (saltPts >= 5) negative.push('alto contenido en sal')
 
   const grade = gradeFromScore(score)
-
   const provisional = missing.length > 0
 
-  // Explanation
   let explanation = ''
   if (positive.length > 0 && negative.length > 0) {
     explanation = `${grade === 'A' ? 'Excelente' : grade === 'B' ? 'Buena' : grade === 'C' ? 'Moderada' : grade === 'D' ? 'Baja' : 'Muy baja'} calidad nutricional. Destaca por ${positive.slice(0, 2).join(' y ')}. Su principal aspecto mejorable es ${negative[0]}.`
@@ -182,19 +179,11 @@ export function scoreFood(input: FoodScoreInput): FoodScoreResult {
     explanation += ' Puntuación provisional: faltan datos (' + missing.join(', ') + ').'
   }
 
-  return {
-    score,
-    grade,
-    provisional,
-    positive,
-    negative,
-    missing,
-    explanation,
-  }
+  return { score, grade, provisional, positive, negative, missing, explanation }
 }
 
 // ============================================================
-// PUNTUACIÓN DIARIA (1-10)
+// PUNTUACIÓN DE INGESTA (comida) - 1-10
 // ============================================================
 
 export interface DailyEntry {
@@ -203,7 +192,9 @@ export interface DailyEntry {
   category?: string
   grams: number
   per100: NutritionPer100
-  foodScore?: number // 0-100, if available
+  foodScore?: number
+  nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
+  novaGroup?: 1 | 2 | 3 | 4
 }
 
 export interface DailyScoreInput {
@@ -213,7 +204,7 @@ export interface DailyScoreInput {
 }
 
 export interface DailyScoreResult {
-  score: number // 1-10
+  score: number
   provisional: boolean
   confidence: 'high' | 'medium' | 'low'
   components: {
@@ -221,6 +212,7 @@ export interface DailyScoreResult {
     macroBalance: number | null
     proteinAdequacy: number | null
     fiberVariety: number | null
+    variety: number | null
   }
   strengths: string[]
   improvements: string[]
@@ -236,7 +228,7 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
       score: 0,
       provisional: true,
       confidence: 'low',
-      components: { foodQuality: null, macroBalance: null, proteinAdequacy: null, fiberVariety: null },
+      components: { foodQuality: null, macroBalance: null, proteinAdequacy: null, fiberVariety: null, variety: null },
       strengths: [],
       improvements: [],
       tips: [],
@@ -248,7 +240,6 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
   const improvements: string[] = []
   const tips: string[] = []
 
-  // Total nutrients
   const totals = entries.reduce(
     (acc, e) => {
       const factor = e.grams / 100
@@ -262,18 +253,21 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
     { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
   )
 
-  // 1. Food quality (avg of food scores)
   const foodScores = entries.map((e) => e.foodScore).filter((s): s is number => s !== undefined && s !== null)
-  const foodQuality = foodScores.length > 0 ? foodScores.reduce((a, b) => a + b, 0) / foodScores.length / 10 : null
+  const hasProvisional = foodScores.length < entries.length
+  const foodQuality = foodScores.length > 0
+    ? foodScores.reduce((a, b) => a + b, 0) / foodScores.length / 10
+    : null
 
-  // 2. Macro balance: check if macros are within reasonable ranges
-  // Ideal: protein 15-30%, carbs 40-55%, fat 20-35% of calories
+  // Penalizar si los alimentos tienen datos incompletos
+  let dataPenalty = 0
+  if (hasProvisional) dataPenalty = 1
+
   let macroBalance: number | null = null
   if (totals.calories > 0) {
     const pPct = (totals.protein * 4 / totals.calories) * 100
     const cPct = (totals.carbs * 4 / totals.calories) * 100
     const fPct = (totals.fat * 9 / totals.calories) * 100
-    // Score based on how close to ideal ranges
     let score = 10
     if (pPct < 12 || pPct > 35) score -= 2
     if (cPct < 35 || cPct > 65) score -= 2
@@ -281,7 +275,6 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
     macroBalance = Math.max(0, score)
   }
 
-  // 3. Protein adequacy: vs target
   let proteinAdequacy: number | null = null
   if (targets.protein > 0) {
     const ratio = totals.protein / targets.protein
@@ -291,61 +284,55 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
     else proteinAdequacy = 2
   }
 
-  // 4. Fiber and variety
-  let fiberVariety: number | null = null
   const uniqueFoods = new Set(entries.map((e) => e.foodName.toLowerCase())).size
   const fiberScore = totals.fiber >= 25 ? 10 : totals.fiber >= 15 ? 7 : totals.fiber >= 8 ? 4 : 2
   const varietyScore = uniqueFoods >= 6 ? 10 : uniqueFoods >= 4 ? 7 : uniqueFoods >= 2 ? 4 : 2
-  fiberVariety = (fiberScore + varietyScore) / 2
+  const fiberVariety = (fiberScore + varietyScore) / 2
 
-  // 5. Calorie adequacy (not reward restriction)
-  // Only mild penalty for extreme over/under
+  // Variedad de comidas (número de comidas distintas con alimentos)
+  const uniqueMeals = new Set(entries.map((e) => (e as any).meal).filter(Boolean)).size
+  const mealVarietyScore = uniqueMeals >= 4 ? 10 : uniqueMeals >= 3 ? 8 : uniqueMeals >= 2 ? 6 : 4
+
   let calorieScore = 10
   if (targets.calories > 0) {
     const ratio = totals.calories / targets.calories
-    if (ratio < 0.5) calorieScore = 5 // too little
-    else if (ratio > 1.5) calorieScore = 6 // too much
+    if (ratio < 0.5) calorieScore = 5
+    else if (ratio > 1.5) calorieScore = 6
     else if (ratio >= 0.8 && ratio <= 1.2) calorieScore = 10
     else calorieScore = 8
   }
 
-  // Combine components with weights, only including available ones
   const components: { name: string; value: number; weight: number }[] = []
-  if (foodQuality !== null) components.push({ name: 'foodQuality', value: foodQuality, weight: 0.3 })
+  if (foodQuality !== null) components.push({ name: 'foodQuality', value: Math.max(0, foodQuality - dataPenalty), weight: 0.3 })
   if (macroBalance !== null) components.push({ name: 'macroBalance', value: macroBalance, weight: 0.2 })
   if (proteinAdequacy !== null) components.push({ name: 'proteinAdequacy', value: proteinAdequacy, weight: 0.15 })
   if (fiberVariety !== null) components.push({ name: 'fiberVariety', value: fiberVariety, weight: 0.15 })
-  components.push({ name: 'calorieScore', value: calorieScore, weight: 0.2 })
+  components.push({ name: 'mealVariety', value: mealVarietyScore, weight: 0.1 })
+  components.push({ name: 'calorieScore', value: calorieScore, weight: 0.1 })
 
   const totalWeight = components.reduce((s, c) => s + c.weight, 0)
   const weightedSum = components.reduce((s, c) => s + c.value * c.weight, 0)
   const rawScore = totalWeight > 0 ? weightedSum / totalWeight : 5
-
-  // Scale to 1-10
   const score = Math.max(1, Math.min(10, Math.round(rawScore * 10) / 10))
 
-  // Confidence
   const confidence: 'high' | 'medium' | 'low' =
     foodScores.length >= entries.length * 0.8 ? 'high' :
     foodScores.length >= entries.length * 0.4 ? 'medium' : 'low'
 
-  // Provisional: if fewer than 3 meals logged (heuristic: check unique meals)
-  // We don't have meal info in DailyEntry, so use entry count heuristic
-  const provisional = entries.length < 3
+  const provisional = entries.length < 3 || hasProvisional
 
-  // Strengths
   if (foodQuality !== null && foodQuality >= 7) strengths.push('Alimentos de buena calidad nutricional')
   if (proteinAdequacy !== null && proteinAdequacy >= 7) strengths.push('Buena adecuación de proteínas')
   if (totals.fiber >= 20) strengths.push('Buen consumo de fibra')
   if (macroBalance !== null && macroBalance >= 7) strengths.push('Equilibrio de macronutrientes adecuado')
+  if (uniqueMeals >= 3) strengths.push('Buena variedad de comidas')
 
-  // Improvements
   if (foodQuality !== null && foodQuality < 5) improvements.push('Mejora la calidad de los alimentos consumidos')
   if (proteinAdequacy !== null && proteinAdequacy < 5) improvements.push('Aumenta el consumo de proteínas')
   if (totals.fiber < 15) improvements.push('Aumenta el consumo de fibra (frutas, verduras, legumbres)')
   if (macroBalance !== null && macroBalance < 5) improvements.push('Mejora el equilibrio de macronutrientes')
+  if (uniqueMeals < 3) improvements.push('Distribuye los alimentos en más comidas')
 
-  // Tips
   if (totals.fiber < 15) tips.push('Añade una porción de fruta o verdura en tu próxima comida.')
   if (proteinAdequacy !== null && proteinAdequacy < 7) tips.push('Incluye una fuente de proteína (pollo, pescado, legumbres, huevos) en tu próxima comida.')
   if (uniqueFoods < 4) tips.push('Varía los alimentos para obtener más micronutrientes.')
@@ -360,6 +347,7 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
       macroBalance,
       proteinAdequacy,
       fiberVariety,
+      variety: mealVarietyScore,
     },
     strengths,
     improvements,
@@ -369,15 +357,11 @@ export function scoreDay(input: DailyScoreInput): DailyScoreResult {
 }
 
 // ============================================================
-// COLOR BAR HELPERS
-// ============================================================
-
-// ============================================================
 // PUNTUACIÓN DE UNA COMIDA INDIVIDUAL (1-10)
 // ============================================================
 
 export interface MealScoreResult {
-  score: number // 1-10
+  score: number
   provisional: boolean
   confidence: 'high' | 'medium' | 'low'
   components: {
@@ -423,7 +407,15 @@ export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
   )
 
   const foodScores = entries.map((e) => e.foodScore).filter((s): s is number => s !== undefined && s !== null)
-  const foodQuality = foodScores.length > 0 ? foodScores.reduce((a, b) => a + b, 0) / foodScores.length / 10 : null
+  const hasProvisional = foodScores.length < entries.length
+  let foodQuality = foodScores.length > 0
+    ? foodScores.reduce((a, b) => a + b, 0) / foodScores.length / 10
+    : null
+
+  // Penalización por datos incompletos
+  if (foodQuality !== null && hasProvisional) foodQuality = foodQuality * 0.7
+  // Penalización por comida de un solo alimento (baja variedad nutricional)
+  if (foodQuality !== null && entries.length === 1) foodQuality = foodQuality * 0.7
 
   let macroBalance: number | null = null
   if (totals.calories > 0) {
@@ -437,7 +429,6 @@ export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
     macroBalance = Math.max(0, score)
   }
 
-  // Protein adequacy (lighter weight for a meal, just presence)
   let proteinAdequacy: number | null = null
   if (totals.calories > 0) {
     const pPct = (totals.protein * 4 / totals.calories) * 100
@@ -449,11 +440,13 @@ export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
 
   const uniqueFoods = new Set(entries.map((e) => e.foodName.toLowerCase())).size
   const fiberScore = totals.fiber >= 5 ? 10 : totals.fiber >= 2 ? 7 : totals.fiber >= 1 ? 4 : 2
-  const varietyScore = uniqueFoods >= 4 ? 10 : uniqueFoods >= 2 ? 7 : 4
+  const varietyScore = uniqueFoods >= 4 ? 10 : uniqueFoods >= 2 ? 7 : 3
   const fiberVariety = (fiberScore + varietyScore) / 2
 
+  const dataPenalty = hasProvisional ? 1 : 0
+
   const components: { value: number; weight: number }[] = []
-  if (foodQuality !== null) components.push({ value: foodQuality, weight: 0.35 })
+  if (foodQuality !== null) components.push({ value: Math.max(0, foodQuality - dataPenalty), weight: 0.35 })
   if (macroBalance !== null) components.push({ value: macroBalance, weight: 0.25 })
   if (proteinAdequacy !== null) components.push({ value: proteinAdequacy, weight: 0.2 })
   components.push({ value: fiberVariety, weight: 0.2 })
@@ -461,13 +454,16 @@ export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
   const totalWeight = components.reduce((s, c) => s + c.weight, 0)
   const weightedSum = components.reduce((s, c) => s + c.value * c.weight, 0)
   const rawScore = totalWeight > 0 ? weightedSum / totalWeight : 5
-  const score = Math.max(1, Math.min(10, Math.round(rawScore * 10) / 10))
+  // Penalización adicional por comida de un solo alimento
+  let finalRaw = rawScore
+  if (entries.length === 1) finalRaw = Math.max(1, finalRaw - 1.5)
+  const score = Math.max(1, Math.min(10, Math.round(finalRaw * 10) / 10))
 
   const confidence: 'high' | 'medium' | 'low' =
     foodScores.length >= entries.length * 0.8 ? 'high' :
     foodScores.length >= entries.length * 0.4 ? 'medium' : 'low'
 
-  const provisional = entries.length < 2 || foodScores.length < entries.length
+  const provisional = entries.length < 2 || hasProvisional
 
   if (foodQuality !== null && foodQuality >= 7) strengths.push('Alimentos de buena calidad')
   if (proteinAdequacy !== null && proteinAdequacy >= 7) strengths.push('Buen aporte de proteínas')
@@ -478,10 +474,12 @@ export function scoreMeal(entries: DailyEntry[]): MealScoreResult {
   if (proteinAdequacy !== null && proteinAdequacy < 5) improvements.push('Aumenta el aporte de proteínas')
   if (totals.fiber < 2) improvements.push('Añade fibra (fruta, verdura, legumbres)')
   if (macroBalance !== null && macroBalance < 5) improvements.push('Mejora el equilibrio de macros')
+  if (entries.length === 1) improvements.push('Añade más alimentos para mayor variedad')
 
   const mealTips: string[] = []
   if (totals.fiber < 2) mealTips.push('Añade una porción de fruta o verdura.')
   if (proteinAdequacy !== null && proteinAdequacy < 7) mealTips.push('Incluye una fuente de proteína.')
+  if (entries.length === 1) mealTips.push('Una comida de un solo alimento tiene menor variedad nutricional.')
   if (mealTips.length === 0) mealTips.push('Comida bien compuesta.')
 
   return {

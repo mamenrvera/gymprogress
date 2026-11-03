@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseOpenFoodFactsResponse } from './openFoodFacts'
+import { parseOpenFoodFactsResponse, isValidBarcode, normalizeBarcode } from './openFoodFacts'
 
 describe('parseOpenFoodFactsResponse', () => {
   it('returns found:false when status !== 1', () => {
@@ -80,7 +80,7 @@ describe('parseOpenFoodFactsResponse', () => {
         product_name: 'Test',
         nutriments: {
           'energy-kcal_100g': 100,
-          'energy-kcal': 50, // serving value, should be ignored
+          'energy-kcal': 50,
           proteins_100g: 10,
           proteins: 5,
         },
@@ -107,6 +107,7 @@ describe('parseOpenFoodFactsResponse', () => {
     expect(r.product?.caloriesPer100).toBe(100)
     expect(r.product?.proteinPer100).toBe(10)
   })
+})
 
 describe('parseOpenFoodFactsResponse - Nutri-Score oficial', () => {
   function makeJson(grade: unknown, extra: Record<string, unknown> = {}) {
@@ -185,4 +186,26 @@ describe('parseOpenFoodFactsResponse - Nutri-Score oficial', () => {
     expect(r.product?.nutriScore).toBeUndefined()
   })
 })
+
+describe('isValidBarcode', () => {
+  it('acepta EAN-13 válido', () => {
+    expect(isValidBarcode('8480000107831')).toBe(true)
+  })
+  it('rechaza EAN-13 con check digit malo', () => {
+    expect(isValidBarcode('8480000107832')).toBe(false)
+  })
+  it('acepta EAN-8 válido', () => {
+    // 96385074 is a valid EAN-8
+    expect(isValidBarcode('96385074')).toBe(true)
+  })
+  it('rechaza longitud inválida', () => {
+    expect(isValidBarcode('12345')).toBe(false)
+    expect(isValidBarcode('1234567')).toBe(false)
+  })
+  it('rechaza no-dígitos', () => {
+    expect(isValidBarcode('848000010783A')).toBe(false)
+  })
+  it('normalizeBarcode elimina no-dígitos', () => {
+    expect(normalizeBarcode('848-000-010-783-1')).toBe('8480000107831')
+  })
 })

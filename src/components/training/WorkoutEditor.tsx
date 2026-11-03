@@ -57,7 +57,7 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
   const id = workoutId
   const { notify } = useApp()
 
-  const { data: workoutsData } = useWorkouts()
+  const { data: workoutsData, refetch: refetchWorkouts } = useWorkouts()
   const { data: workoutExercisesData, refetch: refetchWorkoutExercises } = useWorkoutExercises(id)
   const { data: setsData, refetch: refetchSets } = useSets(id)
   const { data: exercisesData } = useExercises()
@@ -276,6 +276,7 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
     setStatusPending(true)
     try {
       await setWorkoutStatus(workout.id, status)
+      await refetchWorkouts()
       if (status === 'completed') {
         notify(`Entrenamiento completado: ${formatDurationLong(elapsedSec)}`)
         onClose()
@@ -290,6 +291,7 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
   }
 
   const handleFinish = async () => {
+    if (!workout || workout.status === 'completed') return
     if (stats.effectiveSets === 0) {
       setConfirmFinish(true)
       return

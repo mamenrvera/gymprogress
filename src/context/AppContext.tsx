@@ -32,6 +32,7 @@ interface AppContextValue {
   changeTheme: (theme: ThemeMode) => Promise<void>
   toggleTheme: () => Promise<void>
   updateSettings: (values: import('../lib/validators').SettingsFormValues) => Promise<void>
+  refreshSettings: () => Promise<void>
   toasts: Toast[]
   notify: (message: string, kind?: ToastKind) => void
   dismissToast: (id: number) => void
@@ -169,6 +170,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [user, notify],
   )
 
+  const refreshSettings = useCallback(async () => {
+    if (!user) return
+    try {
+      const remoteSettings = await fetchSettingsFromSupabase(user.id)
+      if (remoteSettings) {
+        setSettings(remoteSettings)
+        setThemeState(remoteSettings.theme)
+        applyTheme(remoteSettings.theme)
+      }
+    } catch (e) {
+      console.error('[AppContext] Error refreshing settings:', e)
+    }
+  }, [user])
+
   const toggleTheme = useCallback(async () => {
     await changeTheme(theme === 'dark' ? 'light' : 'dark')
   }, [changeTheme, theme])
@@ -185,12 +200,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       changeTheme,
       toggleTheme,
       updateSettings,
+      refreshSettings,
       toasts,
       notify,
       dismissToast,
       loading,
     }),
-    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, updateSettings, toasts, notify, dismissToast, loading],
+    [settings, selectedDate, goToToday, theme, changeTheme, toggleTheme, updateSettings, refreshSettings, toasts, notify, dismissToast, loading],
   )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

@@ -859,3 +859,162 @@ export async function setTheme(theme: ThemeMode): Promise<void> {
   const { upsertUserPreferences } = await import('./supabase')
   await upsertUserPreferences(userId, theme)
 }
+
+// ============================================================
+// RUTINAS
+// ============================================================
+export async function fetchRoutines(): Promise<import('../types').Routine[]> {
+  const userId = await getCurrentUserId()
+  if (!userId) return []
+  const { fetchRoutinesFromSupabase } = await import('./supabase-data')
+  return fetchRoutinesFromSupabase(userId)
+}
+
+export async function saveRoutine(routine: import('../types').Routine): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { upsertRoutineToSupabase } = await import('./supabase-data')
+  await upsertRoutineToSupabase(routine, userId)
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { deleteRoutineFromSupabase } = await import('./supabase-data')
+  await deleteRoutineFromSupabase(id, userId)
+}
+
+export async function fetchRoutineExercises(routineId: string): Promise<import('../types').RoutineExercise[]> {
+  const { fetchRoutineExercisesFromSupabase } = await import('./supabase-data')
+  return fetchRoutineExercisesFromSupabase(routineId)
+}
+
+export async function saveRoutineExercise(re: import('../types').RoutineExercise): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { upsertRoutineExerciseToSupabase } = await import('./supabase-data')
+  await upsertRoutineExerciseToSupabase(re, userId)
+}
+
+export async function deleteRoutineExercise(id: string): Promise<void> {
+  const { deleteRoutineExerciseFromSupabase } = await import('./supabase-data')
+  await deleteRoutineExerciseFromSupabase(id)
+}
+
+export async function fetchRoutineSchedules(): Promise<import('../types').RoutineSchedule[]> {
+  const userId = await getCurrentUserId()
+  if (!userId) return []
+  const { fetchRoutineSchedulesFromSupabase } = await import('./supabase-data')
+  return fetchRoutineSchedulesFromSupabase(userId)
+}
+
+export async function saveRoutineSchedule(sch: import('../types').RoutineSchedule): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { upsertRoutineScheduleToSupabase } = await import('./supabase-data')
+  await upsertRoutineScheduleToSupabase(sch, userId)
+}
+
+export async function deleteRoutineSchedule(id: string): Promise<void> {
+  const { deleteRoutineScheduleFromSupabase } = await import('./supabase-data')
+  await deleteRoutineScheduleFromSupabase(id)
+}
+
+export async function startWorkoutFromRoutine(routineId: string, date: string): Promise<import('../types').Workout> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  // Create workout
+  const workout = await createWorkout({ name: '', date, notes: '' }, { startNow: true })
+  // We need the routine name; fetch routine
+  const routines = await fetchRoutines()
+  const routine = routines.find((r) => r.id === routineId)
+  if (routine) {
+    // update name
+    await updateWorkoutDetails(workout.id, { name: routine.name, date, notes: routine.description })
+  }
+  // Buscar la última sesión completada de esta rutina para progresión
+  const client = (await import('./supabase')).getSupabaseClient()
+  const { data: prevWorkouts } = await client
+    .from('workouts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('routine_id', routineId)
+    .eq('status', 'completed')
+    .order('date', { ascending: false })
+    .limit(1)
+  const prevWorkoutId = prevWorkouts && prevWorkouts.length > 0 ? prevWorkouts[0].id : null
+
+  // Cargar ejercicios de la rutina y sus series previas
+  const rexs = await fetchRoutineExercises(routineId)
+  for (const re of rexs.sort((a, b) => a.order - b.order)) {
+    const we = await addExerciseToWorkout(workout.id, { id: re.exerciseId, name: re.exerciseName, muscleGroup: re.muscleGroup })
+    // Series de la plantilla
+    const rsets = await fetchRoutineSets(re.id)
+    const templateSets = rsets.length > 0 ? rsets.sort((a, b) => a.setNumber - b.setNumber) : null
+
+    // Series de la última sesión (para progresión)
+    let prevSets: any[] = []
+    if (prevWorkoutId) {
+      const { data: prevWEs } = await client
+        .from('workout_exercises')
+        .select('id, exercise_id, exercise_name')
+        .eq('workout_id', prevWorkoutId)
+      const match = (prevWEs || []).find((w: any) =>
+        (re.exerciseId && w.exercise_id === re.exerciseId) ||
+        (!re.exerciseId && w.exercise_name === re.exerciseName)
+      )
+      if (match) {
+        const { data: ps } = await client
+          .from('sets')
+          .select('*')
+          .eq('workout_exercise_id', match.id)
+          .order('set_number')
+        prevSets = ps || []
+      }
+    }
+
+    const count = templateSets ? templateSets.length : (re.setsCount || 3)
+    for (let i = 0; i < count; i++) {
+      const tmpl = templateSets ? templateSets[i] : null
+      const prev = prevSets[i]
+      await addSet({
+        workoutExerciseId: we.id,
+        workoutId: workout.id,
+        weightKg: prev ? (prev.weight_kg ?? tmpl?.weightKg ?? 0) : (tmpl?.weightKg ?? re.weightKg ?? 0),
+        reps: prev ? (prev.reps ?? tmpl?.reps ?? re.repsTarget ?? 10) : (tmpl?.reps ?? re.repsTarget ?? 10),
+        rir: prev ? (prev.rir ?? tmpl?.rir) : (tmpl?.rir),
+        isWarmup: false,
+        completed: false,
+      } as any)
+    }
+  }
+  // Link workout to routine
+  await (client as any).from('workouts').update({ routine_id: routineId }).eq('id', workout.id)
+  return workout
+}
+
+
+// ============================================================
+// RUTINE SETS
+// ============================================================
+export async function fetchRoutineSets(routineExerciseId: string): Promise<import('../types').RoutineSet[]> {
+  const { fetchRoutineSetsFromSupabase } = await import('./supabase-data')
+  return fetchRoutineSetsFromSupabase(routineExerciseId)
+}
+
+export async function saveRoutineSet(rs: import('../types').RoutineSet): Promise<void> {
+  const userId = await getCurrentUserId()
+  if (!userId) throw new Error('No hay sesión activa')
+  const { upsertRoutineSetToSupabase } = await import('./supabase-data')
+  await upsertRoutineSetToSupabase(rs, userId)
+}
+
+export async function deleteRoutineSet(id: string): Promise<void> {
+  const { deleteRoutineSetFromSupabase } = await import('./supabase-data')
+  await deleteRoutineSetFromSupabase(id)
+}
+
+export async function deleteRoutineSetsByExercise(routineExerciseId: string): Promise<void> {
+  const { deleteRoutineSetsByExerciseFromSupabase } = await import('./supabase-data')
+  await deleteRoutineSetsByExerciseFromSupabase(routineExerciseId)
+}

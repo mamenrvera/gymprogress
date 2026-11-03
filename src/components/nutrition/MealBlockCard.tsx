@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
 import type { Food, FoodEntry, MealBlock, MealType } from '../../types'
 import { sumEntries } from '../../lib/calculations'
 import { formatGrams, formatKcal } from '../../lib/format'
-import { scoreFood, scoreMeal, dailyScoreLabel, gradeColor } from '../../lib/nutritionScore'
+import { scoreFood, scoreMeal, dailyScoreLabel } from '../../lib/nutritionScore'
 import { Button } from '../ui/Button'
 
 const MEAL_LABELS: Record<MealType, string> = {
@@ -42,7 +42,7 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
   const label = block.title || MEAL_LABELS[block.mealType]
   const time = new Date(block.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
   const mealScore = entries.length > 0
-    ? scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100 }).score })))
+    ? scoreMeal(entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100, nutriScore: e.nutriScore, novaGroup: e.novaGroup }).score })))
     : null
 
   return (
@@ -95,25 +95,23 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
                     >
                     <div className="flex items-center gap-1.5 min-w-0">
                       {(() => {
-                        const fs = scoreFood({ per100: entry.per100, name: entry.foodName })
-                        const hasData = !(entry.per100.calories === 0 && entry.per100.protein === 0 && entry.per100.carbs === 0 && entry.per100.fat === 0)
+                        const ns = resolveNS(entry)
+                        const nsColor = ns === 'A' ? '#038141' : ns === 'B' ? '#85BB2F' : ns === 'C' ? '#FECB02' : ns === 'D' ? '#EE8100' : ns === 'E' ? '#E63E11' : null
                         return (
                           <div className="flex shrink-0 items-center gap-1">
-                            {hasData ? (
-                              <span className={`rounded px-1 py-0.5 text-[9px] font-bold leading-none ${gradeColor(fs.grade)}`} title="Calidad GymProgress (propia)">
-                                {fs.grade}
+                            {ns && nsColor ? (
+                              <span
+                                className="rounded px-1.5 py-0.5 text-[9px] font-bold leading-none text-white"
+                                style={{ backgroundColor: nsColor }}
+                                title="Nutri-Score oficial"
+                              >
+                                {ns}
                               </span>
                             ) : (
-                              <span className="rounded border border-line px-1 py-0.5 text-[9px] font-bold leading-none text-faint">
-                                ?
+                              <span className="rounded border border-line bg-raised px-1.5 py-0.5 text-[9px] font-bold leading-none text-faint" title="Nutri-Score oficial no disponible">
+                                NS: Sin datos
                               </span>
                             )}
-                            <span
-                              className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint"
-                              title="Nutri-Score oficial"
-                            >
-                              NS:{resolveNS(entry) ?? '—'}
-                            </span>
                             {entry.novaGroup && (
                               <span className="rounded border border-line bg-raised px-1 py-0.5 text-[9px] font-bold leading-none text-faint">
                                 N{entry.novaGroup}

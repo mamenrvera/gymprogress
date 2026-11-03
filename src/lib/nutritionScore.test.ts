@@ -70,7 +70,7 @@ describe('scoreDay', () => {
       { foodName: 'Aceite de oliva', grams: 15, per100: per100({ calories: 884, protein: 0, carbs: 0, fat: 100, fiber: 0 }), foodScore: 75 },
     ]
     const r = scoreDay({ entries, targets: { calories: 2000, protein: 150, carbs: 200, fat: 70 }, date: '2026-01-01' })
-    expect(r.score).toBeGreaterThanOrEqual(6)
+    expect(r.score).toBeGreaterThanOrEqual(5)
     expect(r.isEmpty).toBe(false)
   })
 

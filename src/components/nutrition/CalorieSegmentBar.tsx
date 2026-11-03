@@ -2,6 +2,8 @@ import { MEAL_LABELS } from '../../types'
 import { formatKcal } from '../../lib/format'
 import { cn } from '../../lib/cn'
 
+export const MEAL_ORDER = ['desayuno', 'almuerzo', 'comida', 'merienda', 'snack', 'cena']
+
 export const MEAL_COLORS: Record<string, string> = {
   desayuno: '#5B8DEF',
   almuerzo: '#9B82D8',
@@ -31,7 +33,10 @@ export function CalorieSegmentBar({
   showLegend = true,
   legendClassName,
 }: Props) {
-  const valid = segments.filter((s) => s.kcal > 0)
+  const valid = segments
+    .filter((s) => s.kcal > 0)
+    .slice()
+    .sort((a, b) => MEAL_ORDER.indexOf(a.meal) - MEAL_ORDER.indexOf(b.meal))
   const total = valid.reduce((a, s) => a + s.kcal, 0)
   const scale = total > target && target > 0 ? target / total : 1
 

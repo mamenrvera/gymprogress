@@ -28,6 +28,38 @@ export interface OpenFoodFactsResult {
 
 const FIELDS = 'code,product_name,brands,image_url,nutriments,nutriscore_grade,nutrition_grades,nova_group'
 
+export function isValidBarcode(code: string): boolean {
+  const c = code.trim()
+  if (!/^\d+$/.test(c)) return false
+  // EAN-8, EAN-13, UPC-A (12), UPC-E (8/6? typically 8)
+  if (![6, 8, 12, 13].includes(c.length)) return false
+  // Check digit validation for EAN-13, EAN-8, UPC-A (12)
+  if (c.length === 13 || c.length === 8 || c.length === 12) {
+    return checkDigitValid(c)
+  }
+  // UPC-E (6) and other short codes: accept without check digit
+  return true
+}
+
+function checkDigitValid(code: string): boolean {
+  const digits = code.split('').map((d) => parseInt(d, 10))
+  if (digits.some((d) => isNaN(d))) return false
+  const check = digits[digits.length - 1]
+  const body = digits.slice(0, -1)
+  let sum = 0
+  for (let i = 0; i < body.length; i++) {
+    const w = i % 2 === 0 ? 1 : 3
+    sum += body[i] * w
+  }
+  const calc = (10 - (sum % 10)) % 10
+  return calc === check
+}
+
+
+export function normalizeBarcode(code: string): string {
+  return code.replace(/\D/g, '').trim()
+}
+
 export function parseOpenFoodFactsResponse(json: any, barcode: string): OpenFoodFactsResult {
   if (json.status !== 1 || !json.product) {
     return { found: false }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
   Moon,
-  RotateCcw,
   Sun,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
@@ -33,7 +32,7 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
 const CARDIO_OPTIONS = ['Caminar', 'Correr', 'Ciclismo', 'Cinta de correr', 'Escaladora', 'Natación', 'Pádel', 'Tenis', 'Fútbol', 'Baloncesto', 'Otro']
 
 export function SettingsPage() {
-  const { settings, theme, changeTheme, notify } = useApp()
+  const { settings, theme, changeTheme, notify, refreshSettings } = useApp()
   const { profile, updateProfile, updateTargets } = useAuth()
   const [savingSection, setSavingSection] = useState<string | null>(null)
   const [recalcPreview, setRecalcPreview] = useState<ReturnType<typeof recommend> | null>(null)
@@ -61,6 +60,8 @@ export function SettingsPage() {
   const [targetOrigin, setTargetOrigin] = useState<'manual' | 'recommended'>(
     (profile?.target_origin as 'manual' | 'recommended') ?? 'manual',
   )
+  const [manualTargets, setManualTargets] = useState({ calories: settings?.targets.calories ?? 1400, protein: settings?.targets.protein ?? 125, fat: settings?.targets.fat ?? 40, carbs: settings?.targets.carbs ?? 90, carbMin: settings?.targets.carbMin ?? 85, carbMax: settings?.targets.carbMax ?? 95 })
+  const [manualError, setManualError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -82,6 +83,11 @@ export function SettingsPage() {
     setCardio((profile.cardio_activities as CardioActivity[] | null) ?? [])
     setTargetOrigin((profile.target_origin as 'manual' | 'recommended') ?? 'manual')
   }, [profile])
+
+  useEffect(() => {
+    if (!settings) return
+    setManualTargets({ calories: settings.targets.calories, protein: settings.targets.protein, fat: settings.targets.fat, carbs: settings.targets.carbs, carbMin: settings.targets.carbMin, carbMax: settings.targets.carbMax })
+  }, [settings?.updatedAt])
 
 
 
@@ -178,6 +184,7 @@ export function SettingsPage() {
         carb_max: Math.round(recalcPreview.carbs * 1.1),
       })
       await updateProfile({ target_origin: 'recommended' })
+      await refreshSettings()
       setTargetOrigin('recommended')
       setShowRecalc(false)
       setRecalcPreview(null)
@@ -190,47 +197,8 @@ export function SettingsPage() {
   }
 
 
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle')
-  const [updateMessage, setUpdateMessage] = useState<string | null>(null)
 
-  const checkForUpdates = async () => {
-    setUpdateStatus('checking')
-    setUpdateMessage(null)
-    try {
-      if (!('serviceWorker' in navigator)) {
-        setUpdateStatus('error')
-        setUpdateMessage('Tu navegador no soporta Service Workers.')
-        return
-      }
-      const registration = await navigator.serviceWorker.getRegistration()
-      if (!registration) {
-        setUpdateStatus('error')
-        setUpdateMessage('No hay Service Worker registrado.')
-        return
-      }
-      await registration.update()
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-      if (registration.waiting) {
-        setUpdateStatus('available')
-        setUpdateMessage('Hay una nueva versión disponible.')
-      } else {
-        setUpdateStatus('up-to-date')
-        setUpdateMessage('Ya tienes la última versión instalada.')
-      }
-    } catch (e) {
-      setUpdateStatus('error')
-      setUpdateMessage('No se pudo comprobar.')
-    }
-  }
 
-  const applyUpdate = () => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then((reg) => {
-        if (reg?.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-      })
-    }
-    window.location.reload()
-  }
 
   if (!settings) {
     return (
@@ -402,7 +370,7 @@ export function SettingsPage() {
             <Button size="sm" className="mt-3" onClick={saveCardio} loading={savingSection === 'cardio'}>Guardar cardio y deportes</Button>
           </section>
 
-          {/* NUTRICIÓN: preferencia y recalcular */}
+          {/* NUTRICIÓN: preferencia y objetivos */}
           <section className="card-pad">
             <h2 className="text-sm font-semibold text-fg mb-3">Nutrición</h2>
             <div className="flex gap-2">
@@ -410,25 +378,84 @@ export function SettingsPage() {
               <button type="button" onClick={() => saveTargetOrigin('recommended')} className={`chip transition ${targetOrigin === 'recommended' ? 'border-lime-500/50 text-accent' : ''}`}>Objetivos recomendados</button>
             </div>
             <p className="mt-2 text-[10px] text-faint">
-              {targetOrigin === 'manual' ? 'Estás usando tus propios objetivos nutricionales.' : 'GymProgress puede recalcular tus objetivos a partir de tus datos.'}
+              {targetOrigin === 'manual' ? 'Estás usando tus propios objetivos nutricionales. Puedes editarlos manualmente.' : 'GymProgress puede recalcular tus objetivos a partir de tus datos.'}
             </p>
-            <Button size="sm" className="mt-3" onClick={runRecalc} loading={savingSection === 'recalc'}>Recalcular mis objetivos</Button>
-            {showRecalc && recalcPreview && (
-              <div className="mt-3 rounded-xl border border-line bg-raised/50 p-3 space-y-2">
-                <p className="text-xs font-semibold text-fg">Propuesta de objetivos</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="card p-2 text-center"><p className="text-[10px] text-faint">Calorías</p><p className="font-semibold tabular text-fg">{recalcPreview.calories} kcal</p></div>
-                  <div className="card p-2 text-center"><p className="text-[10px] text-faint">Proteínas</p><p className="font-semibold tabular text-protein">{recalcPreview.protein} g</p></div>
-                  <div className="card p-2 text-center"><p className="text-[10px] text-faint">Carbohidratos</p><p className="font-semibold tabular text-carbs">{recalcPreview.carbs} g</p></div>
-                  <div className="card p-2 text-center"><p className="text-[10px] text-faint">Grasas</p><p className="font-semibold tabular text-fat">{recalcPreview.fat} g</p></div>
+
+            {targetOrigin === 'manual' ? (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <label className="label">Calorías (kcal)</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.calories} onChange={(e) => setManualTargets({ ...manualTargets, calories: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
+                  <div>
+                    <label className="label">Proteínas (g)</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.protein} onChange={(e) => setManualTargets({ ...manualTargets, protein: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
+                  <div>
+                    <label className="label">Grasas (g)</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.fat} onChange={(e) => setManualTargets({ ...manualTargets, fat: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
+                  <div>
+                    <label className="label">Carbohidratos (g)</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.carbs} onChange={(e) => setManualTargets({ ...manualTargets, carbs: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
                 </div>
-                {recalcPreview.warnings.length > 0 && (
-                  <div className="text-xs text-amber-400">{recalcPreview.warnings.map((w, i) => <p key={i}>{w}</p>)}</div>
-                )}
+                <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+                  <div>
+                    <label className="label">Rango carbos mínimo</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.carbMin} onChange={(e) => setManualTargets({ ...manualTargets, carbMin: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
+                  <div>
+                    <label className="label">Rango carbos máximo</label>
+                    <input type="number" min="0" className="input tabular" value={manualTargets.carbMax} onChange={(e) => setManualTargets({ ...manualTargets, carbMax: Math.max(0, Number(e.target.value) || 0) })} />
+                  </div>
+                </div>
+                {manualError && <p className="text-xs text-rose-400">{manualError}</p>}
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={applyRecalc} loading={savingSection === 'recalc'}>Aceptar y guardar</Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setShowRecalc(false); setRecalcPreview(null) }}>Cancelar</Button>
+                  <Button size="sm" onClick={async () => {
+                    setManualError(null)
+                    if (manualTargets.calories <= 0) { setManualError('Las calorías deben ser mayores que 0'); return }
+                    setSavingSection('manual')
+                    try {
+                      await updateTargets({ calories: manualTargets.calories, protein: manualTargets.protein, fat: manualTargets.fat, carbs: manualTargets.carbs, carb_min: manualTargets.carbMin, carb_max: manualTargets.carbMax })
+                      await updateProfile({ target_origin: 'manual' })
+                      setTargetOrigin('manual')
+                      await refreshSettings()
+                      notify('Objetivos guardados')
+                    } catch (e) {
+                      setManualError(e instanceof Error ? e.message : 'No se pudieron guardar los objetivos')
+                    } finally {
+                      setSavingSection(null)
+                    }
+                  }} loading={savingSection === 'manual'}>Guardar objetivos</Button>
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    if (settings) setManualTargets({ calories: settings.targets.calories, protein: settings.targets.protein, fat: settings.targets.fat, carbs: settings.targets.carbs, carbMin: settings.targets.carbMin, carbMax: settings.targets.carbMax })
+                    setManualError(null)
+                  }}>Cancelar</Button>
                 </div>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <Button size="sm" onClick={runRecalc} loading={savingSection === 'recalc'}>Recalcular mis objetivos</Button>
+                {showRecalc && recalcPreview && (
+                  <div className="mt-3 rounded-xl border border-line bg-raised/50 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-fg">Propuesta de objetivos</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="card p-2 text-center"><p className="text-[10px] text-faint">Calorías</p><p className="font-semibold tabular text-fg">{recalcPreview.calories} kcal</p></div>
+                      <div className="card p-2 text-center"><p className="text-[10px] text-faint">Proteínas</p><p className="font-semibold tabular text-protein">{recalcPreview.protein} g</p></div>
+                      <div className="card p-2 text-center"><p className="text-[10px] text-faint">Carbohidratos</p><p className="font-semibold tabular text-carbs">{recalcPreview.carbs} g</p></div>
+                      <div className="card p-2 text-center"><p className="text-[10px] text-faint">Grasas</p><p className="font-semibold tabular text-fat">{recalcPreview.fat} g</p></div>
+                    </div>
+                    {recalcPreview.warnings.length > 0 && (
+                      <div className="text-xs text-amber-400">{recalcPreview.warnings.map((w, i) => <p key={i}>{w}</p>)}</div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={applyRecalc} loading={savingSection === 'recalc'}>Aceptar y guardar</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setShowRecalc(false); setRecalcPreview(null) }}>Cancelar</Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -458,31 +485,7 @@ export function SettingsPage() {
             </div>
           </section>
 
-          <section className="card-pad">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-lime-400/10 text-accent">
-                <RotateCcw className="h-4 w-4" />
-              </span>
-              <div>
-                <h2 className="text-sm font-semibold text-fg">Actualizaciones</h2>
-                <p className="text-[10px] text-faint">Versión instalada: {import.meta.env.VITE_APP_VERSION || '1.0.0'}</p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              <Button variant="secondary" size="sm" onClick={() => void checkForUpdates()} loading={updateStatus === 'checking'} disabled={updateStatus === 'checking'} className="w-full">
-                <RotateCcw className="h-3.5 w-3.5" /> Comprobar actualizaciones
-              </Button>
-              {updateMessage ? (
-                <p className={cn('rounded-lg border px-2.5 py-2 text-[10px] leading-relaxed', updateStatus === 'available' ? 'border-lime-500/30 bg-lime-400/10 text-accent' : updateStatus === 'error' ? 'border-rose-500/25 bg-rose-500/10 text-rose-400' : 'border-line bg-raised/50 text-faint')}>
-                  {updateMessage}
-                </p>
-              ) : null}
-              {updateStatus === 'available' ? (
-                <Button size="sm" className="w-full" onClick={applyUpdate}>Actualizar ahora</Button>
-              ) : null}
-            </div>
-          </section>
-        </aside>
+                  </aside>
       </div>
     </div>
   )

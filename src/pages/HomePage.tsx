@@ -84,7 +84,7 @@ export function HomePage() {
       foodName: e.foodName,
       grams: e.grams,
       per100: e.per100,
-      foodScore: scoreFood({ per100: e.per100 }).score,
+      foodScore: scoreFood({ per100: e.per100, nutriScore: e.nutriScore, novaGroup: e.novaGroup }).score,
     }))
     return scoreDay({
       entries: dailyEntries,

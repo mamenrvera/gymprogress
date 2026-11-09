@@ -25,7 +25,7 @@ function normalize(text: string): string {
 }
 
 export function ExercisePickerModal({ open, onClose, onAdd, onRequestCreate, existingExerciseIds = [] }: ExercisePickerModalProps) {
-  const { data: exercisesData } = useExercises()
+  const { data: exercisesData, loading: exercisesLoading, refetch: refetchExercises } = useExercises()
   const exercises = exercisesData ?? []
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<MuscleGroup | ''>('')
@@ -41,15 +41,17 @@ export function ExercisePickerModal({ open, onClose, onAdd, onRequestCreate, exi
   useEffect(() => {
     if (!open) {
       setAddedIds([])
+    } else {
+      void refetchExercises()
     }
-  }, [open])
+  }, [open, refetchExercises])
 
   const filtered = useMemo(() => {
     const term = normalize(search.trim())
     return exercises.filter((exercise) => {
-      if (group && exercise.muscleGroup !== group) return false
+      if (group && exercise.muscleGroup !== group && !(exercise.primaryMuscles || []).includes(group) && !(exercise.secondaryMuscles || []).includes(group)) return false
       if (!term) return true
-      return normalize(`${exercise.name} ${exercise.equipment ?? ''}`).includes(term)
+      return normalize(`${exercise.name} ${exercise.equipment ?? ''} ${(exercise.primaryMuscles || []).join(' ')} ${(exercise.secondaryMuscles || []).join(' ')}`).includes(term)
     })
   }, [exercises, search, group])
 
@@ -109,7 +111,13 @@ export function ExercisePickerModal({ open, onClose, onAdd, onRequestCreate, exi
           ))}
         </div>
 
-        {exercises.length === 0 ? (
+        {exercisesLoading ? (
+          <div className="space-y-2 py-4">
+            <div className="skeleton h-12 w-full" />
+            <div className="skeleton h-12 w-full" />
+            <div className="skeleton h-12 w-full" />
+          </div>
+        ) : exercises.length === 0 ? (
           <EmptyState
             icon={<Dumbbell className="h-5 w-5" />}
             title="No hay ejercicios"

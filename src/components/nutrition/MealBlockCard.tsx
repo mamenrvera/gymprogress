@@ -56,8 +56,8 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
           {MEAL_ICONS[block.mealType]}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-fg">{label}</h3>
+          <div className="flex min-w-0 items-baseline justify-between gap-2">
+            <h3 className="min-w-0 truncate text-sm font-semibold text-fg">{label}</h3>
             <p className="shrink-0 text-xs font-semibold tabular text-fg">
               {formatKcal(totals.calories)} <span className="font-normal text-faint">kcal</span>
             </p>
@@ -65,7 +65,7 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
               <span className="chip shrink-0">{mealScore.score.toFixed(1)}/10</span>
             ) : null}
           </div>
-          <p className="mt-0.5 text-[10px] tabular text-faint">
+          <p className="mt-0.5 truncate text-[10px] tabular text-faint">
             <Clock className="inline h-3 w-3 mr-1" />
             {time} · {entries.length === 0 ? 'Sin alimentos' : `P ${formatGrams(totals.protein)} · C ${formatGrams(totals.carbs)} · G ${formatGrams(totals.fat)} g`}
           </p>
@@ -125,11 +125,11 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
                         {entry.brand ? <span className="font-normal text-faint"> · {entry.brand}</span> : null}
                       </p>
                     </div>
-                      <p className="mt-0.5 text-[10px] tabular text-faint">
+                      <p className="mt-0.5 truncate text-[10px] tabular text-faint">
                         {formatGrams(entry.grams)} g · P {formatGrams(entry.protein)} · C {formatGrams(entry.carbs)} · G {formatGrams(entry.fat)}
                       </p>
                     </button>
-                    <div className="shrink-0 flex flex-col items-end gap-1 min-w-[96px]">
+                    <div className="flex shrink-0 flex-col items-end gap-1 min-w-0">
                       {(() => {
                         const p = entry.protein ?? 0
                         const f = entry.fat ?? 0
@@ -140,7 +140,7 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
                         const cPct = tot > 0 ? (c / tot) * 100 : 0
                         return tot > 0 ? (
                           <>
-                            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-line flex">
+                            <div className="h-1.5 w-20 max-w-full overflow-hidden rounded-full bg-line flex sm:w-24">
                               <div className="h-full" style={{ width: `${pPct}%`, backgroundColor: '#38bdf8' }} />
                               <div className="h-full" style={{ width: `${fPct}%`, backgroundColor: '#fbbf24' }} />
                               <div className="h-full" style={{ width: `${cPct}%`, backgroundColor: '#c084fc' }} />

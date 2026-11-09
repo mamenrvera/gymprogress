@@ -90,7 +90,7 @@ export function NutritionSummary({ totals, targets, showEnergyNotice = true, mea
           <div className="flex items-baseline gap-1.5">
             <span
               className={cn(
-                'font-display text-[42px] font-semibold leading-none tracking-tight tabular',
+                'font-display text-[34px] font-semibold leading-none tracking-tight tabular sm:text-[42px]',
                 calories.exceeded ? 'text-rose-400' : 'text-fg',
               )}
             >

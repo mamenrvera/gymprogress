@@ -374,7 +374,7 @@ export function NutritionPage() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-4 gap-1.5 border-t border-line pt-3 text-center">
+                  <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-line pt-3 text-center sm:grid-cols-4">
                     <div>
                       <p className="text-[9px] uppercase text-faint">Kcal</p>
                       <p className="mt-0.5 text-xs font-semibold tabular text-fg">{formatKcal(food.per100.calories)}</p>

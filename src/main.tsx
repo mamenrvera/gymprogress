@@ -9,7 +9,39 @@ import App from './App'
 import { AppProvider } from './context/AppContext'
 import { AuthProvider } from './context/AuthContext'
 
+async function checkVersionAndClearCache() {
+  if (!import.meta.env.PROD) return
+  try {
+    const res = await fetch('/version.json', { cache: 'no-store' })
+    if (!res.ok) return
+    const { version, buildTime } = await res.json()
+    const key = 'gymprogress-deployed-version'
+    const last = localStorage.getItem(key)
+    const current = `${version}|${buildTime}`
+    if (last && last !== current) {
+      // New deployment: clear caches and reload once
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map((r) => r.unregister()))
+      }
+      localStorage.setItem(key, current)
+      window.location.reload()
+      return true
+    }
+    localStorage.setItem(key, current)
+  } catch {
+    // ignore
+  }
+  return false
+}
+
 async function bootstrap() {
+  const reloaded = await checkVersionAndClearCache()
+  if (reloaded) return
   const rootElement = document.getElementById('root')
   if (!rootElement) throw new Error('No se encontró el elemento raíz')
 

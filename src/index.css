@@ -114,7 +114,7 @@ html:not(.dark) {
   }
 
   .input {
-    @apply w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-sm text-fg shadow-sm transition placeholder:text-faint hover:border-ink-500/60 focus:border-lime-500/70 focus:outline-none focus:ring-2 focus:ring-lime-500/20 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply w-full rounded-xl border border-line bg-raised px-3 py-2.5 text-base text-fg shadow-sm transition placeholder:text-faint hover:border-ink-500/60 focus:border-lime-500/70 focus:outline-none focus:ring-2 focus:ring-lime-500/20 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm;
   }
 
   .input-error {

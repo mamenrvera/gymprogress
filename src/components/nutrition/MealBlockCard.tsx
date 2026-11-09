@@ -129,6 +129,29 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
                         {formatGrams(entry.grams)} g · P {formatGrams(entry.protein)} · C {formatGrams(entry.carbs)} · G {formatGrams(entry.fat)}
                       </p>
                     </button>
+                    <div className="shrink-0 flex flex-col items-end gap-1 min-w-[96px]">
+                      {(() => {
+                        const p = entry.protein ?? 0
+                        const f = entry.fat ?? 0
+                        const c = entry.carbs ?? 0
+                        const tot = p + f + c
+                        const pPct = tot > 0 ? (p / tot) * 100 : 0
+                        const fPct = tot > 0 ? (f / tot) * 100 : 0
+                        const cPct = tot > 0 ? (c / tot) * 100 : 0
+                        return tot > 0 ? (
+                          <>
+                            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-line flex">
+                              <div className="h-full" style={{ width: `${pPct}%`, backgroundColor: '#38bdf8' }} />
+                              <div className="h-full" style={{ width: `${fPct}%`, backgroundColor: '#fbbf24' }} />
+                              <div className="h-full" style={{ width: `${cPct}%`, backgroundColor: '#c084fc' }} />
+                            </div>
+                            <p className="text-[9px] tabular text-faint leading-none">
+                              P {formatGrams(p)} · G {formatGrams(f)} · HC {formatGrams(c)} g
+                            </p>
+                          </>
+                        ) : null
+                      })()}
+                    </div>
                     <span className="shrink-0 text-xs font-semibold tabular text-fg">
                       {formatKcal(entry.caloriesDeclared)} <span className="font-normal text-faint">kcal</span>
                     </span>
@@ -173,6 +196,40 @@ export function MealBlockCard({ block, entries, foods, collapsed, onToggle, onAd
               <p className="text-[10px] text-faint">Añade alimentos para ver la puntuación de la comida.</p>
             </div>
           )}
+
+          {entries.length > 0 && (() => {
+            const totalMacroG = totals.protein + totals.fat + totals.carbs
+            const pPct = totalMacroG > 0 ? (totals.protein / totalMacroG) * 100 : 0
+            const fPct = totalMacroG > 0 ? (totals.fat / totalMacroG) * 100 : 0
+            const cPct = totalMacroG > 0 ? (totals.carbs / totalMacroG) * 100 : 0
+            return (
+              <div className="border-t border-line px-4 py-3 space-y-2">
+                <p className="text-[10px] font-semibold text-faint uppercase tracking-wide">Macros de esta comida</p>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-line flex">
+                  <div className="h-full transition-[width] duration-500" style={{ width: `${pPct}%`, backgroundColor: '#38bdf8' }} />
+                  <div className="h-full transition-[width] duration-500" style={{ width: `${fPct}%`, backgroundColor: '#fbbf24' }} />
+                  <div className="h-full transition-[width] duration-500" style={{ width: `${cPct}%`, backgroundColor: '#c084fc' }} />
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: '#38bdf8' }} />
+                    <span className="text-faint">Proteínas</span>
+                    <span className="font-medium tabular text-fg">{formatGrams(totals.protein)} g</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: '#fbbf24' }} />
+                    <span className="text-faint">Grasas</span>
+                    <span className="font-medium tabular text-fg">{formatGrams(totals.fat)} g</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: '#c084fc' }} />
+                    <span className="text-faint">Carbohidratos</span>
+                    <span className="font-medium tabular text-fg">{formatGrams(totals.carbs)} g</span>
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
 
           <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
             <Button size="sm" variant="secondary" className="px-2.5 py-1.5 text-xs" onClick={onAdd}>

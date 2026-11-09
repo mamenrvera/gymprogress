@@ -559,16 +559,30 @@ export async function setWorkoutStatus(id: string, status: WorkoutStatus): Promi
   if (fetchError || !existing) throw new Error('La sesión no existe')
 
   const timestamp = nowISO()
+  const prevAccumulated = (existing.accumulated_seconds as number) ?? 0
+  const prevSegment = existing.segment_started_at as string | undefined
   const patch: Partial<Workout> = { status, updatedAt: timestamp }
   if (status === 'in_progress') {
     patch.startedAt = (existing.started_at as string) ?? timestamp
     patch.finishedAt = undefined
+    patch.accumulatedSeconds = prevAccumulated
+    patch.segmentStartedAt = timestamp
   } else if (status === 'completed') {
     patch.startedAt = (existing.started_at as string) ?? timestamp
     patch.finishedAt = timestamp
+    // Add current segment time to accumulated
+    if (prevSegment) {
+      const segMs = new Date(timestamp).getTime() - new Date(prevSegment).getTime()
+      patch.accumulatedSeconds = prevAccumulated + Math.max(0, Math.floor(segMs / 1000))
+    } else {
+      patch.accumulatedSeconds = prevAccumulated
+    }
+    patch.segmentStartedAt = undefined
   } else if (status === 'planned') {
     patch.startedAt = undefined
     patch.finishedAt = undefined
+    patch.accumulatedSeconds = 0
+    patch.segmentStartedAt = undefined
   }
 
   const workout: Workout = {
@@ -579,6 +593,8 @@ export async function setWorkoutStatus(id: string, status: WorkoutStatus): Promi
     status,
     startedAt: patch.startedAt,
     finishedAt: patch.finishedAt,
+    accumulatedSeconds: patch.accumulatedSeconds,
+    segmentStartedAt: patch.segmentStartedAt,
     createdAt: existing.created_at as string,
     updatedAt: timestamp,
   }
@@ -680,6 +696,12 @@ export async function addSet(params: {
   return set
 }
 
+// Global tracker for pending set saves (to avoid stale reads on refetch)
+const pendingSetSaves: Promise<void>[] = []
+export async function waitForPendingSetSaves(): Promise<void> {
+  await Promise.allSettled(pendingSetSaves.slice())
+}
+
 export async function updateSet(
   id: string,
   patch: Partial<Pick<WorkoutSet, 'weightKg' | 'reps' | 'rir' | 'isWarmup' | 'completed'>>,
@@ -718,7 +740,23 @@ export async function updateSet(
     updatedAt: nowISO(),
   }
 
-  await upsertSetToSupabase(updated)
+  const savePromise = upsertSetToSupabase(updated).catch((e) => { console.error('[updateSet] Supabase upsert failed:', e); throw e })
+  pendingSetSaves.push(savePromise)
+  let lastErr: any = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await savePromise
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+      console.error('[updateSet] attempt', attempt + 1, 'failed:', e)
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 300))
+    }
+  }
+  const idx = pendingSetSaves.indexOf(savePromise)
+  if (idx >= 0) pendingSetSaves.splice(idx, 1)
+  if (lastErr) throw lastErr
 }
 
 export async function deleteSet(id: string): Promise<void> {

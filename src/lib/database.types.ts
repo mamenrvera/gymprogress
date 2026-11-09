@@ -260,6 +260,24 @@ export interface Database {
           equipment: string | null
           notes: string | null
           image_url: string | null
+          image_peak_url: string | null
+          is_global: boolean
+          external_source: string | null
+          external_id: string | null
+          description: string | null
+          instructions: string[] | null
+          tips: string[] | null
+          category: string | null
+          body_part: string | null
+          force_type: string | null
+          mechanic: string | null
+          difficulty: string | null
+          goals: string[] | null
+          tags: string[] | null
+          met: number | null
+          is_unilateral: boolean | null
+          is_bodyweight: boolean | null
+          variation_group: string | null
           created_at: string
           updated_at: string
         }
@@ -271,6 +289,24 @@ export interface Database {
           equipment?: string | null
           notes?: string | null
           image_url?: string | null
+          image_peak_url?: string | null
+          is_global?: boolean
+          external_source?: string | null
+          external_id?: string | null
+          description?: string | null
+          instructions?: string[] | null
+          tips?: string[] | null
+          category?: string | null
+          body_part?: string | null
+          force_type?: string | null
+          mechanic?: string | null
+          difficulty?: string | null
+          goals?: string[] | null
+          tags?: string[] | null
+          met?: number | null
+          is_unilateral?: boolean | null
+          is_bodyweight?: boolean | null
+          variation_group?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -282,6 +318,24 @@ export interface Database {
           equipment?: string | null
           notes?: string | null
           image_url?: string | null
+          image_peak_url?: string | null
+          is_global?: boolean
+          external_source?: string | null
+          external_id?: string | null
+          description?: string | null
+          instructions?: string[] | null
+          tips?: string[] | null
+          category?: string | null
+          body_part?: string | null
+          force_type?: string | null
+          mechanic?: string | null
+          difficulty?: string | null
+          goals?: string[] | null
+          tags?: string[] | null
+          met?: number | null
+          is_unilateral?: boolean | null
+          is_bodyweight?: boolean | null
+          variation_group?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -305,6 +359,8 @@ export interface Database {
           started_at: string | null
           finished_at: string | null
           routine_id: string | null
+          accumulated_seconds: number | null
+          segment_started_at: string | null
           created_at: string
           updated_at: string
         }
@@ -318,6 +374,8 @@ export interface Database {
           started_at?: string | null
           finished_at?: string | null
           routine_id?: string | null
+          accumulated_seconds?: number | null
+          segment_started_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -331,6 +389,8 @@ export interface Database {
           started_at?: string | null
           finished_at?: string | null
           routine_id?: string | null
+          accumulated_seconds?: number | null
+          segment_started_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -339,6 +399,37 @@ export interface Database {
             foreignKeyName: 'workouts_user_id_fkey'
             columns: ['user_id']
             referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      exercise_muscles: {
+        Row: {
+          id: string
+          exercise_id: string
+          muscle_slug: string
+          is_primary: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          exercise_id: string
+          muscle_slug: string
+          is_primary?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          exercise_id?: string
+          muscle_slug?: string
+          is_primary?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'exercise_muscles_exercise_id_fkey'
+            columns: ['exercise_id']
+            referencedRelation: 'exercises'
             referencedColumns: ['id']
           },
         ]

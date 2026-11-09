@@ -126,6 +126,8 @@ export function TrainingPage() {
     )
   }, [workouts, workoutExercises, sets])
   const exercises = exercisesData ?? []
+  const equipmentOptions = Array.from(new Set(exercises.map((e) => e.equipment).filter(Boolean))).sort() as string[]
+  const categoryOptions = Array.from(new Set(exercises.map((e) => e.category).filter(Boolean))).sort() as string[]
   const cardioSessions = cardioData ?? []
 
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false)
@@ -140,6 +142,8 @@ export function TrainingPage() {
   const [deletingCardio, setDeletingCardio] = useState<CardioSession | undefined>(undefined)
   const [exerciseSearch, setExerciseSearch] = useState('')
   const [exerciseGroup, setExerciseGroup] = useState<MuscleGroup | ''>('')
+  const [exerciseEquipment, setExerciseEquipment] = useState('')
+  const [exerciseCategory, setExerciseCategory] = useState('')
   const [historySearch, setHistorySearch] = useState('')
 
   useEffect(() => {
@@ -168,11 +172,17 @@ export function TrainingPage() {
   const filteredExercises = useMemo(() => {
     const term = normalize(exerciseSearch.trim())
     return exercises.filter((exercise) => {
-      if (exerciseGroup && exercise.muscleGroup !== exerciseGroup) return false
+      const matchesMuscle = !exerciseGroup || exercise.muscleGroup === exerciseGroup ||
+        (exercise.primaryMuscles || []).some((m) => m === exerciseGroup) ||
+        (exercise.secondaryMuscles || []).some((m) => m === exerciseGroup)
+      // Note: primary/secondary store MuscleGroup slugs already mapped? We'll compare to exerciseGroup string.
+      if (!matchesMuscle) return false
+      if (exerciseEquipment && exercise.equipment !== exerciseEquipment) return false
+      if (exerciseCategory && exercise.category !== exerciseCategory) return false
       if (!term) return true
-      return normalize(`${exercise.name} ${exercise.equipment ?? ''}`).includes(term)
+      return normalize(`${exercise.name} ${exercise.equipment ?? ''} ${exercise.category ?? ''}`).includes(term)
     })
-  }, [exercises, exerciseSearch, exerciseGroup])
+  }, [exercises, exerciseSearch, exerciseGroup, exerciseEquipment, exerciseCategory])
 
   const historyGroups = useMemo(() => {
     const term = normalize(historySearch.trim())
@@ -565,10 +575,36 @@ export function TrainingPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={exerciseEquipment}
+              onChange={(event) => setExerciseEquipment(event.target.value)}
+              className="input sm:w-40"
+              aria-label="Filtrar por equipamiento"
+            >
+              <option value="">Todo el equipo</option>
+              {equipmentOptions.map((eq) => (
+                <option key={eq} value={eq}>{eq}</option>
+              ))}
+            </select>
+            <select
+              value={exerciseCategory}
+              onChange={(event) => setExerciseCategory(event.target.value)}
+              className="input sm:w-40"
+              aria-label="Filtrar por categoría"
+            >
+              <option value="">Todas las categorías</option>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
             <Button size="sm" onClick={openNewExercise}>
               <Plus className="h-4 w-4" /> Nuevo
             </Button>
           </div>
+
+          <p className="text-[10px] text-faint">
+            Exercise data by <a href="https://repdb.co" target="_blank" rel="noopener noreferrer" className="underline">RepDB (repdb.co)</a>
+          </p>
 
           {exercises.length === 0 ? (
             <div className="card">
@@ -600,6 +636,7 @@ export function TrainingPage() {
                         <p className="mt-0.5 text-[10px] text-faint">
                           {MUSCLE_LABELS[exercise.muscleGroup]}
                           {exercise.equipment ? ` · ${exercise.equipment}` : ''}
+                          {exercise.category ? ` · ${exercise.category}` : ''}
                         </p>
                       </div>
                     </div>

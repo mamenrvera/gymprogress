@@ -257,16 +257,54 @@ export async function fetchExercisesFromSupabase(): Promise<Exercise[]> {
       console.log('[Supabase] All', count, 'exercises belong to current user. Either no other users have created exercises, or RLS is still filtering.')
     }
   }
-  return (data || []).map((row: Record<string, unknown>) => ({
+  const exerciseIds = (data || []).map((r: Record<string, unknown>) => r.id as string)
+  let musclesByExercise = new Map<string, { primary: string[]; secondary: string[] }>()
+  if (exerciseIds.length > 0) {
+    const { data: muscleRows } = await (supabase as any)
+      .from('exercise_muscles')
+      .select('exercise_id, muscle_slug, is_primary')
+      .in('exercise_id', exerciseIds)
+    for (const mr of muscleRows || []) {
+      const cur = musclesByExercise.get(mr.exercise_id) || { primary: [], secondary: [] }
+      if (mr.is_primary) cur.primary.push(mr.muscle_slug)
+      else cur.secondary.push(mr.muscle_slug)
+      musclesByExercise.set(mr.exercise_id, cur)
+    }
+  }
+
+  return (data || []).map((row: Record<string, unknown>) => {
+    const m = musclesByExercise.get(row.id as string) || { primary: [], secondary: [] }
+    return {
     id: row.id as string,
     name: row.name as string,
     muscleGroup: row.muscle_group as MuscleGroup,
     equipment: row.equipment as string | undefined,
     notes: row.notes as string | undefined,
     imageUrl: row.image_url as string | undefined,
+    imagePeakUrl: row.image_peak_url as string | undefined,
+    isGlobal: row.is_global as boolean | undefined,
+    externalSource: row.external_source as string | undefined,
+    description: row.description as string | undefined,
+    instructions: row.instructions as string[] | undefined,
+    tips: row.tips as string[] | undefined,
+    category: row.category as string | undefined,
+    bodyPart: row.body_part as string | undefined,
+    forceType: row.force_type as string | undefined,
+    mechanic: row.mechanic as string | undefined,
+    difficulty: row.difficulty as string | undefined,
+    goals: row.goals as string[] | undefined,
+    tags: row.tags as string[] | undefined,
+    met: row.met as number | undefined,
+    isUnilateral: row.is_unilateral as boolean | undefined,
+    isBodyweight: row.is_bodyweight as boolean | undefined,
+    variationGroup: row.variation_group as string | undefined,
+    externalId: row.external_id as string | undefined,
+    primaryMuscles: m.primary,
+    secondaryMuscles: m.secondary,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
-  }))
+  }
+  })
 }
 
 export async function upsertExerciseToSupabase(exercise: Exercise, userId: string): Promise<void> {
@@ -280,6 +318,24 @@ export async function upsertExerciseToSupabase(exercise: Exercise, userId: strin
       equipment: exercise.equipment,
       notes: exercise.notes,
       image_url: exercise.imageUrl,
+      image_peak_url: exercise.imagePeakUrl,
+      is_global: exercise.isGlobal ?? false,
+      external_source: exercise.externalSource,
+      description: exercise.description,
+      instructions: exercise.instructions,
+      tips: exercise.tips,
+      category: exercise.category,
+      body_part: exercise.bodyPart,
+      force_type: exercise.forceType,
+      mechanic: exercise.mechanic,
+      difficulty: exercise.difficulty,
+      goals: exercise.goals,
+      tags: exercise.tags,
+      met: exercise.met,
+      is_unilateral: exercise.isUnilateral,
+      is_bodyweight: exercise.isBodyweight,
+      variation_group: exercise.variationGroup,
+      external_id: exercise.externalId,
       created_at: exercise.createdAt,
       updated_at: exercise.updatedAt,
     }, { onConflict: 'id' })
@@ -316,27 +372,52 @@ export async function fetchWorkoutsFromSupabase(userId: string): Promise<Workout
     notes: row.notes as string | undefined,
     startedAt: row.started_at as string | undefined,
     finishedAt: row.finished_at as string | undefined,
+    accumulatedSeconds: row.accumulated_seconds as number | undefined,
+    segmentStartedAt: row.segment_started_at as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }))
 }
 
 export async function upsertWorkoutToSupabase(workout: Workout, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('workouts')
-    .upsert({
-      id: workout.id,
-      user_id: userId,
-      date: workout.date,
-      name: workout.name,
-      status: workout.status,
-      notes: workout.notes,
-      started_at: workout.startedAt,
-      finished_at: workout.finishedAt,
-      created_at: workout.createdAt,
-      updated_at: workout.updatedAt,
-    }, { onConflict: 'id' })
-  if (error) throw error
+  const fullPayload: Record<string, unknown> = {
+    id: workout.id,
+    user_id: userId,
+    date: workout.date,
+    name: workout.name,
+    status: workout.status,
+    notes: workout.notes,
+    started_at: workout.startedAt,
+    finished_at: workout.finishedAt,
+    accumulated_seconds: workout.accumulatedSeconds ?? 0,
+    segment_started_at: workout.segmentStartedAt,
+    created_at: workout.createdAt,
+    updated_at: workout.updatedAt,
+  }
+  const basePayload: Record<string, unknown> = {
+    id: workout.id,
+    user_id: userId,
+    date: workout.date,
+    name: workout.name,
+    status: workout.status,
+    notes: workout.notes,
+    started_at: workout.startedAt,
+    finished_at: workout.finishedAt,
+    created_at: workout.createdAt,
+    updated_at: workout.updatedAt,
+  }
+
+  const { error: fullError } = await (supabase as any).from('workouts').upsert(fullPayload, { onConflict: 'id' })
+  if (!fullError) return
+
+  const msg = fullError?.message || fullError?.details || fullError?.hint || JSON.stringify(fullError)
+  if (msg.includes('column') && msg.includes('does not exist')) {
+    console.warn('[Supabase] accumulated_seconds/segment_started_at columns not found. Apply migration 025. Saving without them.')
+    const { error: baseError } = await (supabase as any).from('workouts').upsert(basePayload, { onConflict: 'id' })
+    if (baseError) throw baseError
+    return
+  }
+  throw fullError
 }
 
 export async function deleteWorkoutFromSupabase(id: string, userId: string): Promise<void> {
@@ -407,6 +488,8 @@ export async function deleteWorkoutExerciseFromSupabase(id: string): Promise<voi
 // SETS
 // ============================================================
 export async function fetchSetsFromSupabase(userId: string): Promise<WorkoutSet[]> {
+  // Esperar a guardados pendientes para no leer valores obsoletos
+  try { const { waitForPendingSetSaves } = await import('./repositories'); await waitForPendingSetSaves() } catch { /* ignore */ }
   const { data: workouts, error: wError } = await supabase
     .from('workouts')
     .select('id')
@@ -933,5 +1016,30 @@ export async function deleteRoutineSetFromSupabase(id: string): Promise<void> {
 
 export async function deleteRoutineSetsByExerciseFromSupabase(routineExerciseId: string): Promise<void> {
   const { error } = await (supabase as any).from('routine_sets').delete().eq('routine_exercise_id', routineExerciseId)
+  if (error) throw error
+}
+
+
+// ============================================================
+// EXERCISE_MUSCLES
+// ============================================================
+export async function fetchExerciseMusclesFromSupabase(exerciseId: string): Promise<{ slug: string; isPrimary: boolean }[]> {
+  const { data, error } = await (supabase as any)
+    .from('exercise_muscles')
+    .select('muscle_slug, is_primary')
+    .eq('exercise_id', exerciseId)
+  if (error) throw error
+  return (data || []).map((r: any) => ({ slug: r.muscle_slug, isPrimary: r.is_primary }))
+}
+
+export async function replaceExerciseMusclesInSupabase(exerciseId: string, muscles: { slug: string; isPrimary: boolean }[]): Promise<void> {
+  await (supabase as any).from('exercise_muscles').delete().eq('exercise_id', exerciseId)
+  if (muscles.length === 0) return
+  const rows = muscles.map((m) => ({
+    exercise_id: exerciseId,
+    muscle_slug: m.slug,
+    is_primary: m.isPrimary,
+  }))
+  const { error } = await (supabase as any).from('exercise_muscles').insert(rows)
   if (error) throw error
 }

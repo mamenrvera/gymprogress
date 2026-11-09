@@ -37,6 +37,8 @@ function normalize(text: string): string {
     .toLowerCase()
 }
 
+const MEAL_ORDER = ['desayuno', 'almuerzo', 'comida', 'merienda', 'cena', 'snack']
+
 export function NutritionPage() {
   const { selectedDate, settings, notify } = useApp()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -115,6 +117,14 @@ export function NutritionPage() {
         entries: list,
       })
     }
+    blocks.sort((a, b) => {
+      const ai = MEAL_ORDER.indexOf(a.block.mealType)
+      const bi = MEAL_ORDER.indexOf(b.block.mealType)
+      const aOrd = ai === -1 ? 999 : ai
+      const bOrd = bi === -1 ? 999 : bi
+      if (aOrd !== bOrd) return aOrd - bOrd
+      return a.block.createdAt.localeCompare(b.block.createdAt)
+    })
     return blocks
   }, [entries, mealBlocks, selectedDate])
 
@@ -225,6 +235,7 @@ export function NutritionPage() {
               <NutritionSummary
                 totals={totals}
                 targets={settings.targets}
+                entries={entries.filter((e) => e.date === selectedDate)}
                 mealSegments={dayBlocks
                   .filter((b) => b.entries.length > 0)
                   .reduce((acc, { block, entries: be }) => {

@@ -1,6 +1,8 @@
 import { Info } from 'lucide-react'
 import type { Settings } from '../../types'
 import { kcalFromMacros, progressValue } from '../../lib/calculations'
+import { scoreFood, scoreDay, dailyScoreLabel } from '../../lib/nutritionScore'
+import type { FoodEntry } from '../../types'
 import { formatGrams, formatKcal, formatPercent } from '../../lib/format'
 import { ProgressBar } from '../ui/ProgressBar'
 import { CalorieSegmentBar } from './CalorieSegmentBar'
@@ -49,18 +51,37 @@ interface NutritionSummaryProps {
   targets: Settings['targets']
   showEnergyNotice?: boolean
   mealSegments?: { meal: string; kcal: number }[]
+  entries?: FoodEntry[]
 }
 
-export function NutritionSummary({ totals, targets, showEnergyNotice = true, mealSegments }: NutritionSummaryProps) {
+export function NutritionSummary({ totals, targets, showEnergyNotice = true, mealSegments, entries }: NutritionSummaryProps) {
   const calories = progressValue(totals.calories, targets.calories)
   const carbsInRange =
     totals.carbs >= Math.min(targets.carbMin, targets.carbMax) && totals.carbs <= Math.max(targets.carbMin, targets.carbMax)
   const macroKcal = kcalFromMacros(totals.protein, totals.carbs, totals.fat)
 
+  const dailyScore = (entries && entries.length > 0) ? scoreDay({
+    entries: entries.map((e) => ({ foodName: e.foodName, grams: e.grams, per100: e.per100, foodScore: scoreFood({ per100: e.per100, nutriScore: e.nutriScore, novaGroup: e.novaGroup }).score })),
+    targets: { calories: targets.calories, protein: targets.protein, carbs: targets.carbs, fat: targets.fat },
+    date: '',
+  }) : null
+
   return (
     <div className="card-pad">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-fg">Resumen del día</h2>
+      </div>
+      {dailyScore && !dailyScore.isEmpty ? (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xl font-semibold tabular text-fg">{dailyScore.score.toFixed(1)}</span>
+          <span className="text-xs text-faint">/ 10</span>
+          <span className="chip text-[10px]">{dailyScoreLabel(dailyScore.score)}</span>
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] text-faint">Sin datos</p>
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] text-faint">Cumplimiento</span>
         <span className={cn('chip', calories.exceeded ? 'chip-danger' : '')}>{formatPercent(calories.percent)} kcal</span>
       </div>
 

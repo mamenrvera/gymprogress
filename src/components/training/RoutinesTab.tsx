@@ -133,7 +133,7 @@ export function RoutinesTab({ onWorkoutCreated }: { onWorkoutCreated?: (id: stri
                 </div>
                 {sch && (
                   <p className="text-[10px] text-faint">
-                    {sch.scheduleType === 'date' ? `Fecha: ${sch.specificDate}` : `Días: ${sch.weekdays.map((d) => ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d]).join(', ')}`}
+                    {sch.scheduleType === 'date' ? `Fecha: ${sch.specificDate}` : `Días: ${(sch.weekdays ?? []).map((d) => ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d]).join(', ')}`}
                     {' · '}{sch.startDate} → {sch.endDate}
                   </p>
                 )}
@@ -176,7 +176,7 @@ function RoutineEditorModal({ open, routine, onClose, onSaved }: { open: boolean
           const ex = exercises.find((e) => e.id === re.exerciseId) ?? { id: re.exerciseId ?? '', name: re.exerciseName, muscleGroup: re.muscleGroup as any, createdAt: '', updatedAt: '' }
           const rsets = await fetchRoutineSets(re.id)
           const sets = rsets.length > 0
-            ? rsets.map((rs) => ({ id: rs.id, setNumber: rs.setNumber, weightKg: rs.weightKg ? String(rs.weightKg) : '', reps: rs.reps !== undefined && rs.reps !== null ? String(rs.reps) : '', rir: rs.rir !== undefined ? String(rs.rir) : '', isWarmup: rs.isWarmup, completed: false }))
+            ? rsets.map((rs) => ({ id: rs.id, setNumber: rs.setNumber, weightKg: rs.weightKg ? String(rs.weightKg) : '', reps: rs.reps !== undefined && rs.reps !== null ? String(rs.reps) : '', rir: rs.rir !== undefined ? String(rs.rir) : '', isWarmup: rs.isWarmup ?? false, completed: false }))
             : Array.from({ length: re.setsCount || 3 }, (_, i) => ({ id: newId(), setNumber: i + 1, weightKg: re.weightKg ? String(re.weightKg) : '', reps: re.repsTarget ? String(re.repsTarget) : '', rir: '', isWarmup: false, completed: false }))
           return { exercise: ex as Exercise, sets, restSeconds: re.restSeconds ? String(re.restSeconds) : '', notes: re.notes ?? '' }
         }))
@@ -208,10 +208,6 @@ function RoutineEditorModal({ open, routine, onClose, onSaved }: { open: boolean
           const rn = Number(r)
           if (!Number.isFinite(rn) || rn < 1 || !Number.isInteger(rn)) errors.push(`Repeticiones inválidas en serie ${si + 1} de ${it.exercise.name}`)
         }
-        if (st.rir.trim() !== '') {
-          const rirn = Number(st.rir.replace(',', '.'))
-          if (!Number.isFinite(rirn) || rirn < 0 || rirn > 10) errors.push(`RIR inválido en serie ${si + 1} de ${it.exercise.name}`)
-        }
       })
     })
     if (errors.length > 0) {
@@ -220,7 +216,7 @@ function RoutineEditorModal({ open, routine, onClose, onSaved }: { open: boolean
     }
     setSaving(true)
     try {
-      const r: Routine = { id: routine?.id ?? newId(), userId: '', name: name.trim(), description: description.trim() || undefined, muscleGroup: muscleGroup || undefined, createdAt: routine?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() }
+      const r: Routine = { id: routine?.id ?? newId(), userId: '', name: name.trim(), description: description.trim() || undefined, muscleGroup: (muscleGroup || undefined) as any, createdAt: routine?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() }
       await saveRoutine(r)
       if (routine) {
         const old = await fetchRoutineExercises(routine.id)
@@ -322,11 +318,10 @@ function RoutineEditorModal({ open, routine, onClose, onSaved }: { open: boolean
                   </button>
                 </div>
                 <div className="p-2.5">
-                  <div className="grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_44px_28px] gap-1.5 px-1 pb-1.5 text-center text-[9px] uppercase tracking-wide text-faint">
+                  <div className="grid grid-cols-[30px_minmax(0,1fr)_minmax(0,1fr)_28px] gap-1.5 px-1 pb-1.5 text-center text-[9px] uppercase tracking-wide text-faint">
                     <span>Serie</span>
                     <span>kg</span>
                     <span>Reps</span>
-                    <span>RIR</span>
                     <span />
                   </div>
                   <div className="space-y-1">
@@ -336,6 +331,7 @@ function RoutineEditorModal({ open, routine, onClose, onSaved }: { open: boolean
                         set={set}
                         exerciseName={it.exercise.name}
                         showCompleted={false}
+                        showRir={false}
                         onUpdate={(patch) => updateSetLocal(si, patch)}
                         onDelete={() => deleteSetLocal(si)}
                       />

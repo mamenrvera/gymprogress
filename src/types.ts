@@ -78,11 +78,7 @@ export const FOOD_CATEGORIES = [
   'Grasas y frutos secos',
   'Bebidas',
   'Suplementos',
-  'Ultraprocesados',
-  'Otros',
 ] as const
-
-export type FoodCategory = (typeof FOOD_CATEGORIES)[number]
 
 export type ThemeMode = 'dark' | 'light'
 
@@ -99,25 +95,13 @@ export interface NutritionPer100 {
   salt?: number
 }
 
-export interface Settings {
-  id: 'app'
-  profile: {
-    name?: string
-    initialWeightKg: number
-    heightCm: number
-    goal: GoalType
-  }
-  targets: {
-    calories: number
-    protein: number
-    fat: number
-    carbs: number
-    carbMin: number
-    carbMax: number
-  }
-  theme: ThemeMode
-  createdAt: string
-  updatedAt: string
+export interface NutritionTotals {
+  calories: number
+  caloriesEstimated: number
+  protein: number
+  carbs: number
+  fat: number
+  fiber: number
 }
 
 export interface Food {
@@ -126,26 +110,12 @@ export interface Food {
   brand?: string
   category?: string
   barcode?: string
-  per100: NutritionPer100
-  notes?: string
-  // Clasificaciones nutricionales oficiales (opcionales)
   nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
   novaGroup?: 1 | 2 | 3 | 4
   classificationSource?: 'label' | 'openfoodfacts' | 'manual' | 'calculated'
   classificationDate?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface MealBlock {
-  id: string
-  userId: string
-  date: string
-  mealType: MealType
-  title?: string
-  finishedAt?: string
-  qualityScore?: number
-  qualityVersion?: number
+  per100: NutritionPer100
+  notes?: string
   createdAt: string
   updatedAt: string
 }
@@ -158,10 +128,10 @@ export interface FoodEntry {
   foodId?: string
   foodName: string
   brand?: string
-  grams: number
-  per100: NutritionPer100
   nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E'
   novaGroup?: 1 | 2 | 3 | 4
+  grams: number
+  per100: NutritionPer100
   caloriesDeclared: number
   caloriesEstimated: number
   protein: number
@@ -179,6 +149,26 @@ export interface Exercise {
   equipment?: string
   notes?: string
   imageUrl?: string
+  imagePeakUrl?: string
+  isGlobal?: boolean
+  externalSource?: string
+  externalId?: string
+  description?: string
+  instructions?: string[]
+  tips?: string[]
+  category?: string
+  bodyPart?: string
+  forceType?: string
+  mechanic?: string
+  difficulty?: string
+  goals?: string[]
+  tags?: string[]
+  met?: number
+  isUnilateral?: boolean
+  isBodyweight?: boolean
+  variationGroup?: string
+  primaryMuscles?: string[]
+  secondaryMuscles?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -191,6 +181,8 @@ export interface Workout {
   notes?: string
   startedAt?: string
   finishedAt?: string
+  accumulatedSeconds?: number
+  segmentStartedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -208,67 +200,14 @@ export interface WorkoutExercise {
 
 export interface WorkoutSet {
   id: string
-  workoutId: string
   workoutExerciseId: string
+  workoutId: string
   setNumber: number
   weightKg: number
   reps: number
   rir?: number
-  isWarmup: boolean
-  completed: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface Routine {
-  id: string
-  userId: string
-  name: string
-  description?: string
-  muscleGroup?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface RoutineExercise {
-  id: string
-  routineId: string
-  userId: string
-  exerciseId?: string
-  exerciseName: string
-  muscleGroup: MuscleGroup
-  order: number
-  setsCount: number
-  repsTarget: number
-  weightKg?: number
-  restSeconds?: number
-  notes?: string
-  createdAt: string
-}
-
-export interface RoutineSet {
-  id: string
-  routineExerciseId: string
-  routineId: string
-  userId: string
-  setNumber: number
-  weightKg?: number
-  reps?: number
-  rir?: number
-  isWarmup: boolean
-  restSeconds?: number
-  createdAt: string
-}
-
-export interface RoutineSchedule {
-  id: string
-  userId: string
-  routineId: string
-  scheduleType: 'date' | 'weekly'
-  specificDate?: string
-  weekdays: number[]
-  startDate: string
-  endDate: string
+  isWarmup?: boolean
+  completed?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -282,29 +221,43 @@ export interface BodyWeight {
   updatedAt: string
 }
 
-export interface BackupFile {
-  app: 'GymProgress'
-  version: 1
-  exportedAt: string
-  data: {
-    settings: Settings[]
-    foods: Food[]
-    entries: FoodEntry[]
-    exercises: Exercise[]
-    workouts: Workout[]
-    workoutExercises: WorkoutExercise[]
-    sets: WorkoutSet[]
-    bodyWeights: BodyWeight[]
+export interface Settings {
+  id: string
+  profile: {
+    name?: string
+    initialWeightKg: number
+    heightCm: number
+    goal: GoalType
+    sex?: 'male' | 'female'
+    age?: number
+    activityLevel?: string
   }
+  targets: {
+    calories: number
+    protein: number
+    fat: number
+    carbs: number
+    carbMin: number
+    carbMax: number
+  }
+  theme: ThemeMode
+  createdAt: string
+  updatedAt: string
+  onboardingCompleted?: boolean
 }
 
-export interface NutritionTotals {
-  calories: number
-  caloriesEstimated: number
-  protein: number
-  carbs: number
-  fat: number
-  fiber: number
+export interface MealBlock {
+  id: string
+  userId?: string
+  date: string
+  mealType: MealType
+  title?: string
+  name?: string
+  finishedAt?: string
+  qualityScore?: number
+  qualityVersion?: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface WorkoutStats {
@@ -316,4 +269,67 @@ export interface WorkoutStats {
   volume: number
   reps: number
   bestSet?: { weightKg: number; reps: number; e1rm: number }
+}
+
+export type ToastKind = 'success' | 'error' | 'info'
+
+export interface Toast {
+  id: string
+  kind: ToastKind
+  message: string
+}
+
+export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated'
+
+export interface Routine {
+  id: string
+  userId?: string
+  name: string
+  description?: string
+  muscleGroup?: MuscleGroup
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RoutineExercise {
+  id: string
+  routineId: string
+  userId?: string
+  exerciseId?: string
+  exerciseName: string
+  muscleGroup: MuscleGroup
+  order: number
+  setsCount?: number
+  repsTarget?: number
+  weightKg?: number
+  restSeconds?: number
+  notes?: string
+  createdAt: string
+}
+
+export interface RoutineSet {
+  id: string
+  routineExerciseId: string
+  routineId: string
+  userId?: string
+  setNumber: number
+  weightKg?: number
+  reps?: number
+  rir?: number
+  isWarmup?: boolean
+  restSeconds?: number
+  createdAt: string
+}
+
+export interface RoutineSchedule {
+  id: string
+  userId?: string
+  routineId: string
+  scheduleType: 'date' | 'weekly'
+  specificDate?: string
+  weekdays?: number[]
+  startDate: string
+  endDate: string
+  createdAt: string
+  updatedAt: string
 }

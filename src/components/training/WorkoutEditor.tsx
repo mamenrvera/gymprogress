@@ -13,7 +13,7 @@ import {
   Trash2,
   TrendingUp,
 } from 'lucide-react'
-import type { Exercise, WorkoutExercise } from '../../types'
+import type { Exercise, WorkoutExercise, WorkoutSet } from '../../types'
 import { MUSCLE_LABELS } from '../../types'
 import { useApp } from '../../context/AppContext'
 import { Button } from '../../components/ui/Button'
@@ -80,9 +80,9 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
     return [...workoutExercisesData].sort((a, b) => a.order - b.order)
   }, [workoutExercisesData])
 
-  const sets = useMemo(() => {
-    if (!setsData) return []
-    return setsData
+  const [sets, setSets] = useState<WorkoutSet[]>([])
+  useEffect(() => {
+    if (setsData) setSets(setsData)
   }, [setsData])
 
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -100,19 +100,20 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
 
   // Cronómetro en tiempo real para sesiones en curso (basado en marcas de tiempo reales).
   useEffect(() => {
-    if (workout?.status !== 'in_progress' || !workout.startedAt) return
+    if (workout?.status !== 'in_progress' || !workout.segmentStartedAt) return
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
-  }, [workout?.status, workout?.startedAt])
+  }, [workout?.status, workout?.segmentStartedAt])
 
   const workoutMap = useMemo(() => new Map(allWorkouts.map((item) => [item.id, item])), [allWorkouts])
 
   const stats = workoutStats(sets, workoutExercises.length)
+  const accumulated = workout?.accumulatedSeconds ?? 0
   const elapsedSec =
-    workout?.status === 'in_progress' && workout.startedAt
-      ? Math.max(0, Math.floor((now - new Date(workout.startedAt).getTime()) / 1000))
-      : workout?.startedAt && workout.finishedAt
-        ? Math.max(0, Math.floor((new Date(workout.finishedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000))
+    workout?.status === 'in_progress' && workout.segmentStartedAt
+      ? accumulated + Math.max(0, Math.floor((now - new Date(workout.segmentStartedAt).getTime()) / 1000))
+      : workout?.status === 'completed'
+        ? (accumulated > 0 ? accumulated : (workout.startedAt && workout.finishedAt ? Math.max(0, Math.floor((new Date(workout.finishedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000)) : 0))
         : 0
 
   const getPrevious = (exercise: WorkoutExercise): PreviousPerformance | null => {
@@ -539,8 +540,15 @@ export function WorkoutEditor({ workoutId, onClose, inline = false }: WorkoutEdi
                         key={set.id}
                         set={set}
                         exerciseName={exercise.exerciseName}
-                        onUpdate={(patch) => void updateSet(set.id, patch).then(() => refetchSets()).catch(() => { refetchSets() })}
-                        onDelete={() => void deleteSet(set.id).then(() => refetchSets())}
+                        onUpdate={(patch) => {
+                          // Optimistic update of local sets
+                          setSets((prev) => prev.map((s) => s.id === set.id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s))
+                          void updateSet(set.id, patch).catch((e) => { console.error('[WorkoutEditor] save failed', set.id, e); /* revert on failure */ refetchSets() })
+                        }}
+                        onDelete={() => {
+                          setSets((prev) => prev.filter((s) => s.id !== set.id))
+                          void deleteSet(set.id).catch(() => { refetchSets() })
+                        }}
                       />
                     ))}
                   </div>
